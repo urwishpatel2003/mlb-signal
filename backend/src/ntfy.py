@@ -69,7 +69,7 @@ def _send(title: str, body: str, priority: str = "default",
 
 def send_edges_summary(run_id: int, edges: list[dict], metrics: dict) -> bool:
     """Edges-ready push. Top 5 by magnitude with tier."""
-    title = f"⚾ {metrics.get('n_edges', 0)} edges · run {run_id}"
+    title = f"MLB: {metrics.get('n_edges', 0)} edges, run {run_id}"
     lines: list[str] = []
     lines.append(
         f"{metrics.get('n_games', 0)} games · "
