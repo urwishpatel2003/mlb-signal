@@ -18,7 +18,7 @@ Cron entry point. Runs at ~04:00 ET each morning to grade yesterday's slate:
 Edge cases handled:
   - Postponed games: no actuals, no grading
   - Games still in progress at grading time: skipped, retried next run
-  - Pitchers who didn't appear (rain delay → next-day starter): skipped
+  - Pitchers who didn't appear (rain delay  next-day starter): skipped
 """
 from __future__ import annotations
 import logging

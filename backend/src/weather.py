@@ -2,8 +2,8 @@
 Weather enrichment via NWS (National Weather Service) API.
 
 NWS is free and requires no auth, just a User-Agent header. Two-step lookup:
-  1. /points/{lat,lon} → returns the URL of the gridpoint forecast
-  2. /gridpoints/...   → hourly forecast
+  1. /points/{lat,lon}  returns the URL of the gridpoint forecast
+  2. /gridpoints/...    hourly forecast
 
 We pick the period closest to first pitch (gameDate from MLB Stats API is UTC).
 
@@ -33,7 +33,7 @@ log = logging.getLogger(__name__)
 USER_AGENT = "mlb-signal/0.1 (mlb-models@quaint-signal.tech)"
 NWS_HEADERS = {"User-Agent": USER_AGENT, "Accept": "application/geo+json"}
 
-# Compass cardinal → degrees (FROM convention)
+# Compass cardinal  degrees (FROM convention)
 DIR_TO_DEG = {
     "N": 0, "NNE": 22.5, "NE": 45, "ENE": 67.5, "E": 90, "ESE": 112.5,
     "SE": 135, "SSE": 157.5, "S": 180, "SSW": 202.5, "SW": 225, "WSW": 247.5,

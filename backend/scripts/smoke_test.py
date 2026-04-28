@@ -29,10 +29,10 @@ from src import db, mlb_api, odds, weather
 def check(name: str, fn) -> bool:
     try:
         result = fn()
-        print(f"  ✓ {name}: {result}")
+        print(f"   {name}: {result}")
         return True
     except Exception as e:
-        print(f"  ✗ {name}: {type(e).__name__}: {e}")
+        print(f"   {name}: {type(e).__name__}: {e}")
         return False
 
 
@@ -54,14 +54,14 @@ def test_odds_api():
 
 
 def test_nws():
-    # Cleveland coords — should always have NWS data
+    # Cleveland coords - should always have NWS data
     from src.weather import _fetch_nws
     from datetime import datetime, timezone
     target = datetime.now(timezone.utc).replace(hour=23).isoformat()
     wx = _fetch_nws(41.4962, -81.6852, target)
     if not wx:
         raise RuntimeError("NWS returned empty payload")
-    return f"got {wx.get('temp_f')}°F, {wx.get('wind_raw')}"
+    return f"got {wx.get('temp_f')}F, {wx.get('wind_raw')}"
 
 
 def test_open_meteo():
@@ -70,7 +70,7 @@ def test_open_meteo():
     wx = _fetch_openmeteo(19.4326, -99.1332, target)  # Mexico City
     if not wx:
         raise RuntimeError("Open-Meteo returned empty payload")
-    return f"got {wx.get('temp_f')}°F"
+    return f"got {wx.get('temp_f')}F"
 
 
 def main():

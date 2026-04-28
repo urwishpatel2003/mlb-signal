@@ -5,7 +5,7 @@ We use The Odds API (https://the-odds-api.com) to pull live game totals and
 moneylines. Optional: pitcher props endpoint for proper book-line edges instead
 of the ERA-anchored estimates we use today.
 
-Auth: ODDS_API_KEY env var. Free tier gives 500 requests/month — plenty for
+Auth: ODDS_API_KEY env var. Free tier gives 500 requests/month - plenty for
 our needs (we hit it once per orchestrator run, ~4-5 times/day).
 
 Region: US sportsbooks. Markets: h2h (moneyline), totals (game totals).

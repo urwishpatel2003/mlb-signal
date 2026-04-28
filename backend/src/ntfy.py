@@ -2,9 +2,9 @@
 ntfy push notification client.
 
 Sends three flavors of push:
-  1. edges_ready    — initial morning run finished, top picks summarized
-  2. lineup_change  — projection moved meaningfully because lineup confirmed/changed
-  3. failure        — any cron job hit an error (orchestrator/grader/refresh)
+  1. edges_ready    - initial morning run finished, top picks summarized
+  2. lineup_change  - projection moved meaningfully because lineup confirmed/changed
+  3. failure        - any cron job hit an error (orchestrator/grader/refresh)
 
 Topic is configured via NTFY_TOPIC env var. Server defaults to ntfy.sh but can
 be overridden with NTFY_SERVER (for self-hosted instances).
@@ -72,8 +72,8 @@ def send_edges_summary(run_id: int, edges: list[dict], metrics: dict) -> bool:
     title = f"MLB: {metrics.get('n_edges', 0)} edges, run {run_id}"
     lines: list[str] = []
     lines.append(
-        f"{metrics.get('n_games', 0)} games · "
-        f"{metrics.get('n_lineups_confirmed', 0)} lineups confirmed · "
+        f"{metrics.get('n_games', 0)} games  "
+        f"{metrics.get('n_lineups_confirmed', 0)} lineups confirmed  "
         f"{metrics.get('n_fallback_pitchers', 0)} fallback pitchers"
     )
     lines.append("")
@@ -82,11 +82,11 @@ def send_edges_summary(run_id: int, edges: list[dict], metrics: dict) -> bool:
         tier = e.get("confidence_tier", "?")
         if e["kind"] == "total":
             lines.append(
-                f"{i}. T{tier} · Total {e['lean']:5} {e['line']} → {e['proj_value']:.2f} ({e['edge']:+.2f})"
+                f"{i}. T{tier}  Total {e['lean']:5} {e['line']}  {e['proj_value']:.2f} ({e['edge']:+.2f})"
             )
         else:
             lines.append(
-                f"{i}. T{tier} · {e['pitcher_name'].split(',')[0]} {e['category']} {e['lean']:5} {e['line']} → {e['proj_value']:.2f} ({e['edge']:+.2f})"
+                f"{i}. T{tier}  {e['pitcher_name'].split(',')[0]} {e['category']} {e['lean']:5} {e['line']}  {e['proj_value']:.2f} ({e['edge']:+.2f})"
             )
     body = "\n".join(lines)
     return _send(title, body, priority="default", tags=["baseball", "chart"])
@@ -94,26 +94,26 @@ def send_edges_summary(run_id: int, edges: list[dict], metrics: dict) -> bool:
 
 def send_lineup_change(game_pk: int, away_team: str, home_team: str,
                         delta_runs: float) -> bool:
-    title = f"⚾ Lineup confirmed: {away_team} @ {home_team}"
+    title = f" Lineup confirmed: {away_team} @ {home_team}"
     body = f"Projection moved {delta_runs:+.2f} runs after lineups confirmed."
     return _send(title, body, priority="low", tags=["baseball"])
 
 
 def send_line_move(game_pk: int, away_team: str, home_team: str,
                     old_total: float, new_total: float) -> bool:
-    title = f"⚾ Line moved: {away_team} @ {home_team}"
-    body = f"Total moved {old_total} → {new_total}. New projection run triggered."
+    title = f" Line moved: {away_team} @ {home_team}"
+    body = f"Total moved {old_total}  {new_total}. New projection run triggered."
     return _send(title, body, priority="low")
 
 
 def send_failure(job_name: str, error: str) -> bool:
-    title = f"⚠ {job_name} FAILED"
+    title = f" {job_name} FAILED"
     body = f"Error: {error[:500]}"
     return _send(title, body, priority="urgent", tags=["warning"])
 
 
 def send_grader_summary(snapshot_date: str, perf: dict) -> bool:
-    title = f"⚾ Last night graded · {perf.get('wins',0)}-{perf.get('losses',0)}"
+    title = f" Last night graded  {perf.get('wins',0)}-{perf.get('losses',0)}"
     lines = [
         f"Date: {snapshot_date}",
         f"Flagged: {perf.get('flagged_plays', 0)} plays",

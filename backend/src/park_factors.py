@@ -15,8 +15,8 @@ from typing import Optional
 from . import db
 
 
-# Map team_code → home park_code. For 99% of teams these match (BOS lives
-# at Fenway → "BOS"); ATH (Sacramento), TB (Trop), and special-series venues
+# Map team_code  home park_code. For 99% of teams these match (BOS lives
+# at Fenway  "BOS"); ATH (Sacramento), TB (Trop), and special-series venues
 # can diverge.
 TEAM_HOME_PARK = {
     "ARI": "ARI", "ATL": "ATL", "BAL": "BAL", "BOS": "BOS",

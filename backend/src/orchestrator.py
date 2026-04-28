@@ -14,9 +14,9 @@ This is the cron entry point. It runs the full end-to-end pipeline:
   9. (Dashboard auto-refreshes from FastAPI which queries the latest run)
 
 Scheduling:
-  - 06:00 ET — refresh Statcast (separate job, statcast_refresh.py)
-  - 09:00 ET — first orchestrator run (pre-lineup, based on probables)
-  - 11:00 ET — second run (some lineups posted)
+  - 06:00 ET - refresh Statcast (separate job, statcast_refresh.py)
+  - 09:00 ET - first orchestrator run (pre-lineup, based on probables)
+  - 11:00 ET - second run (some lineups posted)
   - then every 30 min until first pitch (catches lineup confirmations + line moves)
   - Each run is idempotent; we INSERT a new projection_run row each time so
     history is never overwritten and we can track how projections moved.
@@ -56,42 +56,25 @@ import math
 
 
 def poisson_tail_prob(lam: float, line: float, side: str) -> float:
-    """
-    Probability of a Poisson(lam) variable beating the line on side.
-    side is "OVER" or "UNDER".
-
-    Sportsbook lines are typically half-integers (e.g. 8.5), which means
-    no push possibility � the bet either wins or loses cleanly.
-    For integer lines, we return P(X >= line+1) for OVER, P(X <= line-1) for UNDER
-    (excluding the push outcome from the win count).
-    """
     if lam <= 0:
-        return 0.5  # degenerate; refuse to claim conviction
-
-    # P(X = k) = e^-lam * lam^k / k!
-    # Cumulative via iterative loop is safe up to ~50; beyond that use scipy.
+        return 0.5
     is_half = abs(line - round(line)) > 0.01
     threshold = math.ceil(line) if side == "OVER" else math.floor(line)
-
-    # P(X >= threshold)
     if side == "OVER":
-        # 1 - P(X <= threshold - 1)
         cdf = 0.0
         term = math.exp(-lam)
-        for k in range(threshold):
+        for k in range(int(threshold)):
             cdf += term
             term *= lam / (k + 1)
         return max(0.0, min(1.0, 1.0 - cdf))
-    else:  # UNDER
+    else:
         cdf = 0.0
         term = math.exp(-lam)
-        # P(X <= threshold) but exclude push for integer lines
-        upper = threshold if is_half else threshold - 1
+        upper = int(threshold) if is_half else int(threshold) - 1
         for k in range(max(0, upper) + 1):
             cdf += term
             term *= lam / (k + 1)
         return max(0.0, min(1.0, cdf))
-
 
 EDGE_THRESHOLDS = {
     "Total": 0.50,
@@ -105,7 +88,7 @@ EDGE_THRESHOLDS = {
 def confidence_tier(edge: dict, proj: Optional[projections.PitcherProjection] = None) -> int:
     """1 = highest, 3 = lowest. None for non-flagged."""
     abs_edge = abs(edge["edge"])
-    # Disqualifiers — anything keyed off low_sample / league_avg drops to tier 3
+    # Disqualifiers - anything keyed off low_sample / league_avg drops to tier 3
     if proj and proj.source != "statcast":
         return 3
     if edge.get("category") == "Total":
@@ -131,7 +114,7 @@ def estimate_book_lines(p: projections.PitcherProjection,
     """
     Use live odds when available, else estimate. Real book lines for K/H/ER/Outs
     by pitcher are queryable from The Odds API's player props endpoint, but
-    require explicit subscription tier — we'll wire that in later. For now,
+    require explicit subscription tier - we'll wire that in later. For now,
     ERA-anchored estimates per the established methodology.
     """
     if live_lines:
@@ -308,7 +291,7 @@ def run(trigger: str = "manual") -> dict:
         n_fallback_pitchers = 0
         for g in active:
             if not g.away_pitcher or not g.home_pitcher:
-                log.warning("Skipping %s — missing probable pitcher", g.game_pk)
+                log.warning("Skipping %s - missing probable pitcher", g.game_pk)
                 continue
 
             park = all_parks.get(get_park_for_team(g.home_team)) or {}

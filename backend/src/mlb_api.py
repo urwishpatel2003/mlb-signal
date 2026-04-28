@@ -6,10 +6,10 @@ lineups, weather, venue, final scores, and box-score lines. It's the API that
 MLB.com itself consumes. No auth required, never stale, free, structured JSON.
 
 Endpoints we use:
-  /api/v1/schedule      — today's games + probables + lineups + venue + weather
-  /api/v1.1/game/{id}   — full live feed (scores, box, every plate appearance)
-  /api/v1/teams         — team metadata (abbrev, league, division)
-  /api/v1/people/{id}   — player metadata (handedness, position, full name)
+  /api/v1/schedule      - today's games + probables + lineups + venue + weather
+  /api/v1.1/game/{id}   - full live feed (scores, box, every plate appearance)
+  /api/v1/teams         - team metadata (abbrev, league, division)
+  /api/v1/people/{id}   - player metadata (handedness, position, full name)
 
 Caching:
   We cache in Postgres with an `etag` and `expires_at`. Schedule data refreshed
@@ -63,7 +63,7 @@ def _request(path: str, params: Optional[dict] = None, retries: int = 3) -> dict
 class ProbablePitcher:
     mlb_id: int
     full_name: str
-    last_first: str       # "Crochet, Garrett" — matches Statcast CSV format
+    last_first: str       # "Crochet, Garrett" - matches Statcast CSV format
     hand: str             # "L" or "R"
 
 
@@ -315,7 +315,7 @@ def extract_pitcher_lines(box_payload: dict) -> dict[int, dict]:
             if not stats or "inningsPitched" not in stats:
                 continue
             ip_str = stats.get("inningsPitched", "0.0")
-            # MLB encodes 5⅓ as "5.1" (one out), 5⅔ as "5.2" (two outs)
+            # MLB encodes 5 as "5.1" (one out), 5 as "5.2" (two outs)
             try:
                 whole, frac = ip_str.split(".") if "." in ip_str else (ip_str, "0")
                 ip = int(whole) + (int(frac) / 3.0)
@@ -373,7 +373,7 @@ if __name__ == "__main__":
         for g in games:
             ap = g.away_pitcher.last_first if g.away_pitcher else "?"
             hp = g.home_pitcher.last_first if g.home_pitcher else "?"
-            lc = "✓" if g.lineups_confirmed else "—"
+            lc = "" if g.lineups_confirmed else "-"
             print(f"  {g.game_time_et} {g.away_team:>3}@{g.home_team:<3}  "
                   f"{ap:25s} vs {hp:25s}  status={g.status:12s}  lineups={lc}")
     elif len(sys.argv) > 2 and sys.argv[1] == "box":

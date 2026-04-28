@@ -10,7 +10,7 @@ What it does:
   2. Seeds the `teams` table (30 MLB clubs)
   3. Seeds the `parks` table for the current season
 
-This is idempotent — safe to run multiple times. ON CONFLICT DO UPDATE
+This is idempotent - safe to run multiple times. ON CONFLICT DO UPDATE
 clauses ensure data is refreshed but not duplicated.
 """
 from __future__ import annotations
@@ -44,7 +44,7 @@ def apply_migrations() -> None:
         with db.conn() as c:
             c.execute(sql)
             c.commit()
-        log.info("  ✓ %s applied", f.name)
+        log.info("   %s applied", f.name)
 
 
 def main():
@@ -57,11 +57,11 @@ def main():
 
     log.info("Step 2: seeding teams (30 clubs)...")
     n = seed_teams()
-    log.info("  ✓ %d team rows upserted", n)
+    log.info("   %d team rows upserted", n)
 
     log.info("Step 3: seeding parks for %d...", date.today().year)
     n = seed_parks(date.today().year)
-    log.info("  ✓ %d park rows upserted", n)
+    log.info("   %d park rows upserted", n)
 
     log.info("Bootstrap complete. System is ready.")
     log.info("Next: trigger orchestrator manually with `python -m src.orchestrator --trigger=initial`")

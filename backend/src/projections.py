@@ -155,7 +155,7 @@ def _wind_components(wind_deg: Optional[float], cf_az: float) -> tuple[float, fl
 def temp_run_factor(temp_f: Optional[float]) -> float:
     if temp_f is None:
         return 1.0
-    # Empirical: ~0.93% per 10°F vs 70°F baseline
+    # Empirical: ~0.93% per 10F vs 70F baseline
     return 1.0 + ((temp_f - 70) / 10) * 0.0093
 
 
@@ -213,7 +213,7 @@ def project_pitcher(
         or pitcher_xstats.get("xera") is None
         or pa < low_sample_pa_threshold
     ):
-        # Fallback path — rookies, recently called up, etc.
+        # Fallback path - rookies, recently called up, etc.
         true_era = LEAGUE_ER9
         xera = era = xwoba_against = None
         h_per_pa = LEAGUE_XBA
