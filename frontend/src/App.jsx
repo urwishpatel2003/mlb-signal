@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
-const TABS = ['Edges', 'Games', 'Performance'];
+const TABS = ['Games', 'Pitcher Props', 'Slate', 'Track Record'];
 
 // Map internal category codes to user-facing market labels
 const MARKET_LABELS = {
@@ -15,7 +15,7 @@ const MARKET_LABELS = {
 };
 
 export default function App() {
-  const [tab, setTab] = useState('Edges');
+  const [tab, setTab] = useState('Games');
   const [slate, setSlate] = useState(null);
   const [perf, setPerf] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -47,27 +47,39 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
 
+  // Split edges by kind for tab routing
+  const gameTotalEdges = (slate?.edges ?? []).filter(e => e.kind === 'total');
+  const pitcherPropEdges = (slate?.edges ?? []).filter(e => e.kind === 'prop');
+
   return (
     <div className="app">
-      <Masthead slate={slate} />
+      <Masthead slate={slate}
+                gameCount={gameTotalEdges.length}
+                propCount={pitcherPropEdges.length} />
       <nav className="tabs">
-        {TABS.map(t => (
-          <button
-            key={t}
-            className={`tab ${tab === t ? 'active' : ''}`}
-            onClick={() => setTab(t)}>
-            {t}
-          </button>
-        ))}
+        {TABS.map(t => {
+          let count = '';
+          if (t === 'Games') count = gameTotalEdges.length ? ` (${gameTotalEdges.length})` : '';
+          else if (t === 'Pitcher Props') count = pitcherPropEdges.length ? ` (${pitcherPropEdges.length})` : '';
+          return (
+            <button
+              key={t}
+              className={`tab ${tab === t ? 'active' : ''}`}
+              onClick={() => setTab(t)}>
+              {t}{count}
+            </button>
+          );
+        })}
       </nav>
 
       {loading && <div className="loading">Loading slate</div>}
       {error && <div className="empty">Error: {error}</div>}
       {!loading && !error && slate && (
         <>
-          {tab === 'Edges' && <EdgesView edges={slate.edges} />}
-          {tab === 'Games' && <GamesView games={slate.games} projections={slate.projections} />}
-          {tab === 'Performance' && <PerformanceView perf={perf} />}
+          {tab === 'Games' && <EdgesView edges={gameTotalEdges} kind="game" />}
+          {tab === 'Pitcher Props' && <EdgesView edges={pitcherPropEdges} kind="prop" />}
+          {tab === 'Slate' && <GamesView games={slate.games} projections={slate.projections} />}
+          {tab === 'Track Record' && <PerformanceView perf={perf} />}
         </>
       )}
 
@@ -104,9 +116,13 @@ function Masthead({ slate }) {
   );
 }
 
-function EdgesView({ edges }) {
+function EdgesView({ edges, kind }) {
+  const emptyMsg = kind === 'game'
+    ? 'No game total edges flagged tonight.'
+    : 'No pitcher prop edges flagged tonight.';
+
   if (!edges || edges.length === 0) {
-    return <div className="empty">No edges flagged on today's slate.</div>;
+    return <div className="empty">{emptyMsg}</div>;
   }
 
   // Sort: highest conviction first, ties broken by edge magnitude
@@ -117,16 +133,21 @@ function EdgesView({ edges }) {
     return Math.abs(b.edge) - Math.abs(a.edge);
   });
 
+  const heading = kind === 'game' ? 'Game totals.' : 'Pitcher props.';
+  const deck = kind === 'game'
+    ? 'Over/under on combined runs scored - 9 innings'
+    : 'K, Hits, ER, Outs - flagged where projection vs market diverges';
+
   return (
     <section>
       <div className="section-header">
-        <h2>Edges, ranked.</h2>
-        <span className="deck">By conviction &middot; Poisson-implied probability vs market line</span>
+        <h2>{heading}</h2>
+        <span className="deck">{deck}</span>
       </div>
 
       <div className="edges-table">
         <div className="edges-thead">
-          <span>Team / Pitcher</span>
+          <span>{kind === 'game' ? 'Matchup' : 'Pitcher'}</span>
           <span>Market</span>
           <span className="num">Line</span>
           <span>Pick</span>
@@ -145,12 +166,10 @@ function EdgeRow({ edge }) {
   const isProp = edge.kind === 'prop';
   const market = MARKET_LABELS[edge.category] || edge.category;
 
-  // Subject: matchup for game totals, pitcher name for props
   const subject = isProp
     ? edge.pitcher_name?.split(',')[0] ?? '—'
     : `${edge.team_code ?? '?'} @ ${edge.opp_team_code ?? '?'}`;
 
-  // Subject sub-line: for props, show team-vs-opp; for totals, show edge magnitude
   const subjectSub = isProp
     ? `${edge.team_code ?? ''} v ${edge.opp_team_code ?? ''}`
     : null;
@@ -159,7 +178,6 @@ function EdgeRow({ edge }) {
   const tier = edge.confidence_tier ?? 3;
   const isLowTrust = tier === 3 || conv == null;
 
-  // Color the conviction bar by quality bucket
   let convBarClass = 'conv-bar';
   if (conv != null) {
     if (conv >= 75) convBarClass += ' conv-strong';
@@ -205,8 +223,8 @@ function GamesView({ games, projections }) {
   return (
     <section>
       <div className="section-header">
-        <h2>Tonight's games.</h2>
-        <span className="deck">Probables &middot; projections &middot; edge</span>
+        <h2>Tonight's slate.</h2>
+        <span className="deck">Probables &middot; projections &middot; market line</span>
       </div>
       <div className="games">
         {games.map(g => (
@@ -258,7 +276,7 @@ function GameCard({ game, projs }) {
 
 function PerformanceView({ perf }) {
   if (!perf || perf.length === 0) {
-    return <div className="empty">No performance data yet — grade your first slate to populate.</div>;
+    return <div className="empty">No performance data yet - first slate hasn't graded yet.</div>;
   }
   return (
     <section>
