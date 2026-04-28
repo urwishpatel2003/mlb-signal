@@ -24,7 +24,8 @@ import logging
 import time
 from dataclasses import dataclass, field, asdict
 from datetime import date, datetime, timezone
-from typing import Optional, Any
+from typing import Optional
+from datetime import datetime, timezone, timedelta, Any
 import requests
 
 log = logging.getLogger(__name__)
@@ -271,8 +272,8 @@ def _parse_game(raw: dict) -> Game:
 
     g = Game(
         game_pk=int(raw["gamePk"]),
-        game_date_et=raw.get("gameDate", "")[:10],
-        game_time_et=raw.get("gameDate", "")[11:16],
+        game_date_et=_to_et_date(raw.get("gameDate", "")),
+        game_time_et=_to_et_time(raw.get("gameDate", "")),
         status=raw.get("status", {}).get("detailedState", "Unknown"),
         away_team=abbr(away_t),
         home_team=abbr(home_t),
