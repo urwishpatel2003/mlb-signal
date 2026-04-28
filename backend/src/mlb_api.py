@@ -234,6 +234,30 @@ TEAM_ABBR_NORMALIZATION = {
     "CHW": "CWS",
 }
 
+def _to_et_date(iso_utc):
+    if not iso_utc:
+        return ""
+    try:
+        dt_utc = datetime.fromisoformat(iso_utc.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return iso_utc[:10]
+    et_offset = timedelta(hours=-4)
+    dt_et = dt_utc + et_offset
+    return dt_et.date().isoformat()
+
+
+def _to_et_time(iso_utc):
+    if not iso_utc:
+        return ""
+    try:
+        dt_utc = datetime.fromisoformat(iso_utc.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return iso_utc[11:16]
+    et_offset = timedelta(hours=-4)
+    dt_et = dt_utc + et_offset
+    return dt_et.strftime("%H:%M")
+
+
 def _parse_game(raw: dict) -> Game:
     teams = raw.get("teams", {})
     away_t = teams.get("away", {})
