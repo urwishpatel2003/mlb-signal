@@ -2,9 +2,8 @@ import React, { useState, useEffect } from 'react';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
-const TABS = ['Games', 'Pitcher Props', 'Slate', 'Track Record'];
+const TABS = ['Games', 'Pitcher Props', 'Pitchers', 'Slate', 'Track Record'];
 
-// Map internal category codes to user-facing market labels
 const MARKET_LABELS = {
   Total: 'Game Total',
   K:     'Pitcher Strikeouts',
@@ -12,6 +11,12 @@ const MARKET_LABELS = {
   ER:    'Pitcher Earned Runs',
   Outs:  'Pitcher Outs Recorded',
   BB:    'Pitcher Walks',
+};
+
+const SOURCE_LABELS = {
+  statcast:    { label: 'Statcast', cls: 'src-statcast' },
+  low_sample:  { label: 'Low Sample', cls: 'src-low' },
+  league_avg:  { label: 'League Avg', cls: 'src-league' },
 };
 
 export default function App() {
@@ -47,7 +52,6 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
 
-  // Split edges by kind for tab routing
   const gameTotalEdges = (slate?.edges ?? []).filter(e => e.kind === 'total');
   const pitcherPropEdges = (slate?.edges ?? []).filter(e => e.kind === 'prop');
 
@@ -61,6 +65,7 @@ export default function App() {
           let count = '';
           if (t === 'Games') count = gameTotalEdges.length ? ` (${gameTotalEdges.length})` : '';
           else if (t === 'Pitcher Props') count = pitcherPropEdges.length ? ` (${pitcherPropEdges.length})` : '';
+          else if (t === 'Pitchers') count = slate?.projections?.length ? ` (${slate.projections.length})` : '';
           return (
             <button
               key={t}
@@ -78,6 +83,7 @@ export default function App() {
         <>
           {tab === 'Games' && <EdgesView edges={gameTotalEdges} kind="game" />}
           {tab === 'Pitcher Props' && <EdgesView edges={pitcherPropEdges} kind="prop" />}
+          {tab === 'Pitchers' && <PitchersView projections={slate.projections} games={slate.games} />}
           {tab === 'Slate' && <GamesView games={slate.games} projections={slate.projections} />}
           {tab === 'Track Record' && <PerformanceView perf={perf} />}
         </>
@@ -110,7 +116,7 @@ function Masthead({ slate }) {
           <span>{nGames} GAMES</span>
           <span>{nEdges} EDGES</span>
         </div>
-        <span>RUN #{runId ?? '—'}</span>
+        <span>RUN #{runId ?? '-'}</span>
       </div>
     </header>
   );
@@ -125,7 +131,6 @@ function EdgesView({ edges, kind }) {
     return <div className="empty">{emptyMsg}</div>;
   }
 
-  // Sort: highest conviction first, ties broken by edge magnitude
   const sorted = [...edges].sort((a, b) => {
     const ca = a.conviction_pct ?? -1;
     const cb = b.conviction_pct ?? -1;
@@ -167,7 +172,7 @@ function EdgeRow({ edge }) {
   const market = MARKET_LABELS[edge.category] || edge.category;
 
   const subject = isProp
-    ? edge.pitcher_name?.split(',')[0] ?? '—'
+    ? edge.pitcher_name?.split(',')[0] ?? '-'
     : `${edge.team_code ?? '?'} @ ${edge.opp_team_code ?? '?'}`;
 
   const subjectSub = isProp
@@ -208,6 +213,101 @@ function EdgeRow({ edge }) {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Pitchers tab - full kitchen-sink projection table
+// ============================================================================
+
+function PitchersView({ projections, games }) {
+  if (!projections || projections.length === 0) {
+    return <div className="empty">No pitcher projections yet for tonight's slate.</div>;
+  }
+
+  // Build a game-time lookup so we can sort by game start
+  const gameTime = {};
+  (games || []).forEach(g => { gameTime[g.game_pk] = g.game_time_et || ''; });
+
+  // Sort: by game time, then alphabetical within game
+  const sorted = [...projections].sort((a, b) => {
+    const ta = gameTime[a.game_pk] || '99:99';
+    const tb = gameTime[b.game_pk] || '99:99';
+    if (ta !== tb) return ta.localeCompare(tb);
+    return (a.last_first || '').localeCompare(b.last_first || '');
+  });
+
+  return (
+    <section>
+      <div className="section-header">
+        <h2>Pitcher projections.</h2>
+        <span className="deck">All starting pitchers &middot; lineup-weighted xwOBA, park factor, weather</span>
+      </div>
+
+      <div className="pitchers-table">
+        <div className="pitchers-thead">
+          <span>Pitcher</span>
+          <span className="ctr">Team</span>
+          <span className="ctr">Hand</span>
+          <span className="ctr">vs</span>
+          <span className="num">PA</span>
+          <span className="num">ERA</span>
+          <span className="num">xERA</span>
+          <span className="num">tERA</span>
+          <span className="num">xwOBA</span>
+          <span className="num">Opp xwOBA</span>
+          <span className="num">IP</span>
+          <span className="num">K</span>
+          <span className="num">BB</span>
+          <span className="num">H</span>
+          <span className="num">ER</span>
+          <span className="num">Outs</span>
+          <span className="num">PF</span>
+          <span className="num">Wx</span>
+          <span>Source</span>
+        </div>
+        <div className="pitchers-tbody">
+          {sorted.map((p, i) => <PitcherRow key={p.mlb_id || p.pitcher_mlb_id || i} p={p} />)}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PitcherRow({ p }) {
+  const sourceInfo = SOURCE_LABELS[p.source] || { label: p.source || '?', cls: 'src-unknown' };
+  const fmt = (v, d = 2) => v == null ? '-' : Number(v).toFixed(d);
+  const fmt0 = v => v == null ? '-' : Math.round(Number(v)).toString();
+
+  // Use lineup-confirmed indicator on opponent xwOBA
+  const oppLabel = p.used_actual_lineup
+    ? <span title="Lineup-confirmed">{fmt(p.opp_lineup_xwoba, 3)}</span>
+    : <span title="Team aggregate (lineup not yet posted)" className="proj-tentative">{fmt(p.opp_lineup_xwoba, 3)}*</span>;
+
+  return (
+    <div className="pitcher-row">
+      <div className="cell-pitcher-name">{p.last_first?.split(',')[0] ?? '-'}</div>
+      <div className="cell-ctr">{p.team_code ?? '-'}</div>
+      <div className="cell-ctr">{p.hand ?? '-'}</div>
+      <div className="cell-ctr">{p.opp_team_code ?? '-'}</div>
+      <div className="cell-num">{fmt0(p.pa_sample)}</div>
+      <div className="cell-num">{fmt(p.era)}</div>
+      <div className="cell-num">{fmt(p.xera)}</div>
+      <div className="cell-num">{fmt(p.true_era)}</div>
+      <div className="cell-num">{fmt(p.xwoba_against, 3)}</div>
+      <div className="cell-num">{oppLabel}</div>
+      <div className="cell-num">{fmt(p.ip, 1)}</div>
+      <div className="cell-num cell-proj">{fmt(p.k, 1)}</div>
+      <div className="cell-num">{fmt(p.bb, 1)}</div>
+      <div className="cell-num">{fmt(p.hits, 1)}</div>
+      <div className="cell-num cell-proj">{fmt(p.er, 2)}</div>
+      <div className="cell-num">{fmt(p.outs, 1)}</div>
+      <div className="cell-num">{fmt(p.pf_factor, 2)}</div>
+      <div className="cell-num">{fmt(p.wx_factor, 2)}</div>
+      <div className="cell-source">
+        <span className={`source-pill ${sourceInfo.cls}`}>{sourceInfo.label}</span>
       </div>
     </div>
   );
@@ -257,16 +357,16 @@ function GameCard({ game, projs }) {
       <div className="game-totals">
         <div className="stat">
           <div className="label">Market</div>
-          <div className="value">{game.market_total ?? '—'}</div>
+          <div className="value">{game.market_total ?? '-'}</div>
         </div>
         <div className="stat">
           <div className="label">Proj</div>
-          <div className="value">{game.proj_total ? Number(game.proj_total).toFixed(2) : '—'}</div>
+          <div className="value">{game.proj_total ? Number(game.proj_total).toFixed(2) : '-'}</div>
         </div>
         <div className="stat edge">
           <div className="label">Edge</div>
           <div className={`value ${game.edge_total >= 0 ? 'pos' : 'neg'}`}>
-            {game.edge_total ? (game.edge_total >= 0 ? '+' : '') + Number(game.edge_total).toFixed(2) : '—'}
+            {game.edge_total ? (game.edge_total >= 0 ? '+' : '') + Number(game.edge_total).toFixed(2) : '-'}
           </div>
         </div>
       </div>

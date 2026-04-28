@@ -564,3 +564,149 @@ html, body {
   .cell-pick { grid-area: pick; }
   .cell-conviction { grid-area: conv; text-align: right; }
 }
+/* ============================================================================
+   Pitchers tab - kitchen-sink projection table
+   Append this block to the existing styles.css; do not replace anything else.
+   ============================================================================ */
+
+.pitchers-table {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  overflow-x: auto;
+}
+
+.pitchers-thead,
+.pitcher-row {
+  display: grid;
+  grid-template-columns:
+    minmax(140px, 1.4fr)  /* Pitcher */
+    50px                   /* Team */
+    50px                   /* Hand */
+    50px                   /* vs */
+    50px                   /* PA */
+    60px                   /* ERA */
+    60px                   /* xERA */
+    60px                   /* tERA */
+    70px                   /* xwOBA */
+    80px                   /* Opp xwOBA */
+    50px                   /* IP */
+    50px                   /* K */
+    50px                   /* BB */
+    50px                   /* H */
+    60px                   /* ER */
+    50px                   /* Outs */
+    50px                   /* PF */
+    50px                   /* Wx */
+    minmax(90px, 110px);   /* Source */
+  gap: 6px;
+  align-items: center;
+  padding: 8px 12px;
+  min-width: 1200px;
+}
+
+.pitchers-thead {
+  background: var(--paper-2);
+  border-bottom: 2px solid var(--ink);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  font-weight: 700;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.pitchers-thead .num,
+.pitchers-thead .ctr { text-align: center; }
+
+.pitcher-row {
+  border-bottom: 1px solid var(--rule);
+  font-size: 12px;
+  transition: background 0.1s;
+}
+
+.pitcher-row:last-child { border-bottom: none; }
+.pitcher-row:hover { background: rgba(196, 80, 43, 0.04); }
+
+.cell-pitcher-name {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.cell-ctr {
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+  font-weight: 600;
+}
+
+.pitcher-row .cell-num {
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-feature-settings: 'tnum';
+  color: var(--ink-2);
+}
+
+.pitcher-row .cell-num.cell-proj {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.proj-tentative {
+  color: var(--ink-3);
+  font-style: italic;
+}
+
+.cell-source {
+  text-align: center;
+}
+
+.source-pill {
+  display: inline-block;
+  padding: 3px 8px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-radius: 2px;
+  border: 1px solid;
+  font-weight: 700;
+}
+
+.source-pill.src-statcast {
+  background: rgba(77, 107, 58, 0.10);
+  color: var(--moss);
+  border-color: rgba(77, 107, 58, 0.3);
+}
+
+.source-pill.src-low {
+  background: rgba(182, 148, 58, 0.12);
+  color: var(--gold);
+  border-color: rgba(182, 148, 58, 0.4);
+}
+
+.source-pill.src-league {
+  background: rgba(107, 96, 83, 0.10);
+  color: var(--ink-3);
+  border-color: var(--rule);
+}
+
+.source-pill.src-unknown {
+  background: var(--paper-2);
+  color: var(--ink-3);
+  border-color: var(--rule);
+}
+
+@media (max-width: 1200px) {
+  /* On narrow screens, the table scrolls horizontally - that's the intended UX */
+  .pitchers-table {
+    /* Already overflow-x: auto */
+  }
+}
