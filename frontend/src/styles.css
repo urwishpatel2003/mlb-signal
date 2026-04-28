@@ -1,0 +1,479 @@
+/* ============================================================================
+   QuAInt MLB Signal — Editorial Dashboard
+   ============================================================================
+   Aesthetic: Financial broadsheet meets sports almanac. Cream paper, deep ink,
+   single warm accent (vermillion). Display: Fraunces (high-contrast serif).
+   Body: Inter Tight (humanist sans). Numerics: JetBrains Mono.
+   ============================================================================ */
+
+:root {
+  /* Tokens */
+  --paper:   #f6f0e4;
+  --paper-2: #ece2cd;
+  --ink:     #1a1814;
+  --ink-2:   #3a342a;
+  --ink-3:   #6b6053;
+  --rule:    #c9bea7;
+  --vermillion: #c4502b;
+  --vermillion-deep: #8a3919;
+  --gold:    #b6943a;
+  --moss:    #4d6b3a;
+  --shadow-soft: 0 1px 2px rgba(26, 24, 20, 0.06),
+                 0 4px 12px rgba(26, 24, 20, 0.04);
+
+  --display: 'Fraunces', Georgia, serif;
+  --body:    'Inter Tight', -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono:    'JetBrains Mono', ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.5;
+  /* Subtle paper texture via stacked gradients */
+  background-image:
+    radial-gradient(circle at 25% 10%, rgba(196, 80, 43, 0.018) 0%, transparent 40%),
+    radial-gradient(circle at 80% 60%, rgba(77, 107, 58, 0.018) 0%, transparent 40%),
+    repeating-linear-gradient(
+      30deg, transparent 0 2px, rgba(26, 24, 20, 0.012) 2px 3px
+    );
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================================================
+   Layout
+   ============================================================================ */
+
+.app {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 32px 28px 72px;
+}
+
+/* ============================================================================
+   Masthead
+   ============================================================================ */
+
+.masthead {
+  border-bottom: 3px double var(--ink);
+  padding-bottom: 14px;
+  margin-bottom: 24px;
+  position: relative;
+}
+
+.masthead-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.masthead h1 {
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: clamp(48px, 7vw, 88px);
+  line-height: 0.92;
+  letter-spacing: -0.025em;
+  font-variation-settings: 'opsz' 144;
+  color: var(--ink);
+}
+
+.masthead .em {
+  color: var(--vermillion);
+  font-style: italic;
+  font-weight: 700;
+}
+
+.masthead-sub {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+}
+
+.masthead-sub .meta {
+  display: flex;
+  gap: 18px;
+}
+
+/* ============================================================================
+   Tabs
+   ============================================================================ */
+
+.tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 28px;
+}
+
+.tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 14px 22px 12px;
+  font-family: var(--body);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  text-transform: uppercase;
+}
+
+.tab:hover { color: var(--ink); }
+
+.tab.active {
+  color: var(--ink);
+  border-bottom-color: var(--vermillion);
+}
+
+/* ============================================================================
+   Headline / section header
+   ============================================================================ */
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 8px;
+  margin-bottom: 18px;
+}
+
+.section-header h2 {
+  font-family: var(--display);
+  font-size: 32px;
+  font-weight: 700;
+  font-style: italic;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+.section-header .deck {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  text-transform: uppercase;
+}
+
+/* ============================================================================
+   Edges list
+   ============================================================================ */
+
+.edges {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.edge {
+  display: grid;
+  grid-template-columns: 36px 1fr 60px 90px 90px 70px 80px;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--rule);
+  font-size: 14px;
+  transition: background 0.1s;
+}
+
+.edge:hover { background: rgba(196, 80, 43, 0.04); }
+
+.edge .rank {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.edge .label {
+  font-family: var(--body);
+}
+
+.edge .label .matchup {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.edge .label .sub {
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-top: 2px;
+}
+
+.edge .badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 3px 8px;
+  border-radius: 2px;
+  background: var(--paper-2);
+  color: var(--ink-2);
+  text-transform: uppercase;
+}
+
+.edge .badge.tier-1 {
+  background: var(--vermillion);
+  color: var(--paper);
+}
+
+.edge .badge.tier-2 {
+  background: var(--gold);
+  color: var(--paper);
+}
+
+.edge .badge.tier-3 {
+  background: var(--paper-2);
+  color: var(--ink-3);
+}
+
+.edge .lean {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+}
+
+.edge .lean.OVER  { color: var(--moss); }
+.edge .lean.UNDER { color: var(--vermillion-deep); }
+
+.edge .num {
+  font-family: var(--mono);
+  font-size: 13px;
+  text-align: right;
+  font-feature-settings: 'tnum';
+}
+
+.edge .num.proj { color: var(--ink-2); font-weight: 500; }
+
+.edge .edge-val {
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 700;
+  font-size: 18px;
+  text-align: right;
+  font-feature-settings: 'tnum';
+}
+
+.edge .edge-val.pos { color: var(--moss); }
+.edge .edge-val.neg { color: var(--vermillion); }
+
+/* ============================================================================
+   Game cards
+   ============================================================================ */
+
+.games {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 16px;
+}
+
+.game-card {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-top: 4px solid var(--ink);
+  padding: 18px;
+  box-shadow: var(--shadow-soft);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.game-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(26, 24, 20, 0.08);
+}
+
+.game-card.flagged-over { border-top-color: var(--moss); }
+.game-card.flagged-under { border-top-color: var(--vermillion); }
+
+.game-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+}
+
+.game-header .matchup {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
+
+.game-header .time {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  letter-spacing: 0.05em;
+}
+
+.pitcher-line {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 6px 0;
+  font-size: 13px;
+}
+
+.pitcher-line .name { font-weight: 600; }
+.pitcher-line .sub { color: var(--ink-3); font-size: 11px; font-family: var(--mono); }
+.pitcher-line .xera {
+  font-family: var(--mono);
+  font-weight: 600;
+  text-align: right;
+}
+
+.game-totals {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+}
+
+.game-totals .stat {
+  text-align: center;
+}
+
+.game-totals .stat .label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  text-transform: uppercase;
+}
+
+.game-totals .stat .value {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 22px;
+  margin-top: 2px;
+}
+
+.game-totals .stat.edge .value.pos { color: var(--moss); font-style: italic; }
+.game-totals .stat.edge .value.neg { color: var(--vermillion); font-style: italic; }
+
+/* ============================================================================
+   Performance panel
+   ============================================================================ */
+
+.perf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin-bottom: 28px;
+}
+
+.perf-card {
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  padding: 18px;
+}
+
+.perf-card .label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.perf-card .value {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 36px;
+  font-feature-settings: 'tnum';
+  line-height: 1;
+}
+
+.perf-card .value.pos { color: var(--moss); }
+.perf-card .value.neg { color: var(--vermillion); }
+
+.perf-card .sub {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  margin-top: 8px;
+}
+
+/* ============================================================================
+   Empty / loading
+   ============================================================================ */
+
+.empty {
+  padding: 48px 0;
+  text-align: center;
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 22px;
+  color: var(--ink-3);
+}
+
+.loading {
+  padding: 48px 0;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  color: var(--ink-3);
+  text-transform: uppercase;
+}
+
+.loading::after {
+  content: ' ●';
+  animation: pulse 1.4s infinite;
+}
+
+@keyframes pulse {
+  0%, 60%, 100% { opacity: 0.3; }
+  30% { opacity: 1; }
+}
+
+/* ============================================================================
+   Footer
+   ============================================================================ */
+
+.footer {
+  border-top: 1px solid var(--rule);
+  margin-top: 48px;
+  padding-top: 16px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--ink-3);
+  display: flex;
+  justify-content: space-between;
+}
+
+@media (max-width: 700px) {
+  .app { padding: 18px 14px 48px; }
+  .edge {
+    grid-template-columns: 30px 1fr auto;
+    gap: 8px;
+  }
+  .edge .lean, .edge .num.line, .edge .num.proj { display: none; }
+}

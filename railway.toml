@@ -1,0 +1,47 @@
+# Railway configuration for mlb-signal
+# Reference: https://docs.railway.com/reference/config-as-code
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "backend/Dockerfile"
+buildCommand = ""
+
+[deploy]
+startCommand = "uvicorn src.api:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+# ---------- Cron jobs ----------
+# Railway evaluates cron expressions in UTC; we shift ET → UTC manually.
+# ET is UTC-5 (EST) or UTC-4 (EDT). Conversions below assume EDT (active April-November).
+# Adjust for EST in winter or use a wrapper that handles DST.
+
+[[deploy.crons]]
+name = "statcast_refresh"
+schedule = "0 10 * * *"             # 06:00 ET daily
+command = "python -m src.statcast_refresh"
+
+[[deploy.crons]]
+name = "orchestrator_morning"
+schedule = "0 13 * * *"             # 09:00 ET daily — first run with probables
+command = "python -m src.orchestrator --trigger=morning"
+
+[[deploy.crons]]
+name = "orchestrator_line_watcher"
+schedule = "*/30 15-23 * * *"       # every 30 min, 11AM-7PM ET — catches line moves & lineup confirms
+command = "python -m src.orchestrator --trigger=line_watcher"
+
+[[deploy.crons]]
+name = "grader"
+schedule = "0 8 * * *"              # 04:00 ET daily — grades yesterday after all games done
+command = "python -m src.grader"
+
+# ---------- Required env vars (set in Railway dashboard) ----------
+# DATABASE_URL          (auto-injected by Railway Postgres plugin)
+# ODDS_API_KEY          (https://the-odds-api.com)
+# NTFY_TOPIC            (your private ntfy topic, e.g. "mlb-signal-uvi-7g3xq")
+# NTFY_SERVER           (optional, defaults to https://ntfy.sh)
+# ADMIN_TOKEN           (random 32-char string for protecting /api/admin endpoints)
+# ALLOWED_ORIGINS       (comma-sep, e.g. "https://mlb-signal.vercel.app")
