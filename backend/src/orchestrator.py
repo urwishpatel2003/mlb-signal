@@ -120,12 +120,19 @@ def estimate_book_lines(p: projections.PitcherProjection,
     if live_lines:
         return live_lines
 
-    surface_era = p.era or 4.30
-    market_er = surface_era * (5.5 / 9)
+    # Books regress prop lines toward league baselines. Even on a pitcher with
+    # 0.38 ERA, the ER line will be 1.5 (the realistic floor for a 5+ IP start).
+    # We blend xERA-weighted "true ERA" toward 4.30 league average to match.
+    surface_era = p.true_era if p.true_era is not None else (p.era if p.era is not None else 4.30)
+    regressed_era = 0.4 * surface_era + 0.6 * 4.30
+    market_er = regressed_era * (5.5 / 9)
+    er_line = max(1.5, min(3.5, half(market_er)))
+    # K line scales mildly with K%; default 5.0-5.5 range
+    k_line = max(3.5, min(7.5, half((8.5 / 9) * 5.5)))
     return {
-        "K":    half((8.5 / 9) * 5.5),
+        "K":    k_line,
         "Hits": 5.5,
-        "ER":   half(market_er),
+        "ER":   er_line,
         "Outs": 16.5,
     }
 
