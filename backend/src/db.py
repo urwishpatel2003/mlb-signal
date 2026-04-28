@@ -164,6 +164,8 @@ def upsert_game(g: dict) -> None:
           now()
         )
         ON CONFLICT (game_pk) DO UPDATE SET
+          game_date = EXCLUDED.game_date,
+          game_time_et = EXCLUDED.game_time_et,
           status = EXCLUDED.status,
           away_record = EXCLUDED.away_record,
           home_record = EXCLUDED.home_record,
