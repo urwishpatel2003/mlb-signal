@@ -307,9 +307,10 @@ def run(trigger: str = "manual") -> dict:
                 if proj.used_actual_lineup:
                     n_lineup_confirmed += 1
 
-                db.insert_pitcher_projection(run_id, {
-                    **proj.to_dict(), "game_pk": g.game_pk
-                })
+                proj_dict = proj.to_dict()
+                proj_dict["mlb_id"] = proj_dict.pop("pitcher_mlb_id")
+                proj_dict["game_pk"] = g.game_pk
+                db.insert_pitcher_projection(run_id, proj_dict)
 
                 if is_home:
                     home_proj = proj
