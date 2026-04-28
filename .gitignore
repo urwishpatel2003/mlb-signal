@@ -1,0 +1,29 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+env/
+.env
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Local secrets / data
+*.csv
+*.tar.gz
+.env.local
