@@ -84,43 +84,48 @@ def fetch_current_odds() -> list[dict]:
         if not away_code or not home_code:
             continue
 
-        # Average across bookmakers for a stable consensus number
-        totals: list[float] = []
-        over_prices: list[int] = []
-        under_prices: list[int] = []
-        away_mls: list[int] = []
-        home_mls: list[int] = []
-
-        for bk in game.get("bookmakers", []):
+        # Take DraftKings line first, fall back to FanDuel, then any other book.
+        # Books only offer half-integer or integer totals; averaging across
+        # books produces synthetic numbers like 8.7 that nobody actually offers.
+        PREFERRED = ("draftkings", "fanduel", "betmgm", "caesars", "williamhill_us")
+        market_total = None
+        over_price = None
+        under_price = None
+        away_ml = None
+        home_ml = None
+        bookmakers_sorted = sorted(
+            game.get("bookmakers", []),
+            key=lambda bk: PREFERRED.index(bk.get("key", "zzz")) if bk.get("key", "zzz") in PREFERRED else 99,
+        )
+        for bk in bookmakers_sorted:
             for market in bk.get("markets", []):
                 outcomes = market.get("outcomes", [])
-                if market.get("key") == "totals":
+                if market.get("key") == "totals" and market_total is None:
                     for o in outcomes:
                         if o.get("name") == "Over":
-                            totals.append(float(o["point"]))
-                            over_prices.append(int(o["price"]))
+                            market_total = float(o["point"])
+                            over_price = int(o["price"])
                         elif o.get("name") == "Under":
-                            under_prices.append(int(o["price"]))
-                elif market.get("key") == "h2h":
+                            under_price = int(o["price"])
+                elif market.get("key") == "h2h" and (away_ml is None or home_ml is None):
                     for o in outcomes:
                         team_code = _to_code(o.get("name", ""))
-                        if team_code == away_code:
-                            away_mls.append(int(o["price"]))
-                        elif team_code == home_code:
-                            home_mls.append(int(o["price"]))
-
-        def mean_or_none(xs):
-            return sum(xs) / len(xs) if xs else None
+                        if team_code == away_code and away_ml is None:
+                            away_ml = int(o["price"])
+                        elif team_code == home_code and home_ml is None:
+                            home_ml = int(o["price"])
+            if market_total is not None and away_ml is not None and home_ml is not None:
+                break  # We have everything we need from preferred book
 
         out.append({
             "away_team": away_code,
             "home_team": home_code,
             "commence_time": game.get("commence_time"),
-            "market_total": mean_or_none(totals),
-            "over_price": int(mean_or_none(over_prices)) if over_prices else None,
-            "under_price": int(mean_or_none(under_prices)) if under_prices else None,
-            "away_ml": int(mean_or_none(away_mls)) if away_mls else None,
-            "home_ml": int(mean_or_none(home_mls)) if home_mls else None,
+            "market_total": market_total,
+            "over_price": over_price,
+            "under_price": under_price,
+            "away_ml": away_ml,
+            "home_ml": home_ml,
         })
     return out
 
