@@ -710,3 +710,48 @@ html, body {
     /* Already overflow-x: auto */
   }
 }
+
+/* ============================================================================
+   Sortable pitcher table headers
+   Append to existing styles.css
+   ============================================================================ */
+
+.pitchers-th {
+  background: none;
+  border: none;
+  padding: 4px 2px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.1s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pitchers-th:hover {
+  color: var(--ink);
+}
+
+.pitchers-th.active {
+  color: var(--vermillion);
+}
+
+.pitchers-th.num {
+  text-align: right;
+}
+
+.pitchers-th.ctr {
+  text-align: center;
+}
+
+/* Override the previous flex-based header rules so the new buttons align right */
+.pitchers-thead .num,
+.pitchers-thead .ctr {
+  /* Keeps the prior CSS valid; buttons themselves handle their own alignment */
+}

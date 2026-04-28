@@ -19,6 +19,29 @@ const SOURCE_LABELS = {
   league_avg:  { label: 'League Avg', cls: 'src-league' },
 };
 
+// Pitchers table columns - drives both header and sort logic
+const PITCHER_COLUMNS = [
+  { key: 'last_first',         label: 'Pitcher',     align: 'left',  type: 'string' },
+  { key: 'team_code',          label: 'Team',        align: 'ctr',   type: 'string' },
+  { key: 'hand',               label: 'Hand',        align: 'ctr',   type: 'string' },
+  { key: 'opp_team_code',      label: 'vs',          align: 'ctr',   type: 'string' },
+  { key: 'pa_sample',          label: 'PA',          align: 'num',   type: 'number' },
+  { key: 'era',                label: 'ERA',         align: 'num',   type: 'number' },
+  { key: 'xera',               label: 'xERA',        align: 'num',   type: 'number' },
+  { key: 'true_era',           label: 'tERA',        align: 'num',   type: 'number' },
+  { key: 'xwoba_against',      label: 'xwOBA',       align: 'num',   type: 'number' },
+  { key: 'opp_lineup_xwoba',   label: 'Opp xwOBA',   align: 'num',   type: 'number' },
+  { key: 'ip',                 label: 'IP',          align: 'num',   type: 'number' },
+  { key: 'k',                  label: 'K',           align: 'num',   type: 'number' },
+  { key: 'bb',                 label: 'BB',          align: 'num',   type: 'number' },
+  { key: 'hits',               label: 'H',           align: 'num',   type: 'number' },
+  { key: 'er',                 label: 'ER',          align: 'num',   type: 'number' },
+  { key: 'outs',               label: 'Outs',        align: 'num',   type: 'number' },
+  { key: 'pf_factor',          label: 'PF',          align: 'num',   type: 'number' },
+  { key: 'wx_factor',          label: 'Wx',          align: 'num',   type: 'number' },
+  { key: 'source',             label: 'Source',      align: 'left',  type: 'string' },
+];
+
 export default function App() {
   const [tab, setTab] = useState('Games');
   const [slate, setSlate] = useState(null);
@@ -219,54 +242,82 @@ function EdgeRow({ edge }) {
 }
 
 // ============================================================================
-// Pitchers tab - full kitchen-sink projection table
+// Pitchers tab - sortable kitchen-sink projection table
 // ============================================================================
 
 function PitchersView({ projections, games }) {
+  // Default sort: by game time (asc), then last_first (asc)
+  const [sortKey, setSortKey] = useState('__default');
+  const [sortDir, setSortDir] = useState('asc');
+
   if (!projections || projections.length === 0) {
     return <div className="empty">No pitcher projections yet for tonight's slate.</div>;
   }
 
-  // Build a game-time lookup so we can sort by game start
+  // Build game-time lookup for default sort
   const gameTime = {};
   (games || []).forEach(g => { gameTime[g.game_pk] = g.game_time_et || ''; });
 
-  // Sort: by game time, then alphabetical within game
+  function handleHeaderClick(colKey) {
+    if (sortKey === colKey) {
+      // Toggle direction on second click
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    } else {
+      // New column: numeric defaults to descending (highest first), strings ascending
+      const col = PITCHER_COLUMNS.find(c => c.key === colKey);
+      setSortKey(colKey);
+      setSortDir(col?.type === 'number' ? 'desc' : 'asc');
+    }
+  }
+
+  function getSortValue(p, key) {
+    if (key === '__default') {
+      const gt = gameTime[p.game_pk] || '99:99';
+      return `${gt}|${p.last_first || ''}`;
+    }
+    const v = p[key];
+    if (v == null) return null;
+    return v;
+  }
+
   const sorted = [...projections].sort((a, b) => {
-    const ta = gameTime[a.game_pk] || '99:99';
-    const tb = gameTime[b.game_pk] || '99:99';
-    if (ta !== tb) return ta.localeCompare(tb);
-    return (a.last_first || '').localeCompare(b.last_first || '');
+    const va = getSortValue(a, sortKey);
+    const vb = getSortValue(b, sortKey);
+    // Nulls always sort last regardless of direction
+    if (va == null && vb == null) return 0;
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    let cmp;
+    if (typeof va === 'number' && typeof vb === 'number') {
+      cmp = va - vb;
+    } else {
+      cmp = String(va).localeCompare(String(vb));
+    }
+    return sortDir === 'asc' ? cmp : -cmp;
   });
 
   return (
     <section>
       <div className="section-header">
         <h2>Pitcher projections.</h2>
-        <span className="deck">All starting pitchers &middot; lineup-weighted xwOBA, park factor, weather</span>
+        <span className="deck">Click any column to sort &middot; lineup-weighted xwOBA, park factor, weather</span>
       </div>
 
       <div className="pitchers-table">
         <div className="pitchers-thead">
-          <span>Pitcher</span>
-          <span className="ctr">Team</span>
-          <span className="ctr">Hand</span>
-          <span className="ctr">vs</span>
-          <span className="num">PA</span>
-          <span className="num">ERA</span>
-          <span className="num">xERA</span>
-          <span className="num">tERA</span>
-          <span className="num">xwOBA</span>
-          <span className="num">Opp xwOBA</span>
-          <span className="num">IP</span>
-          <span className="num">K</span>
-          <span className="num">BB</span>
-          <span className="num">H</span>
-          <span className="num">ER</span>
-          <span className="num">Outs</span>
-          <span className="num">PF</span>
-          <span className="num">Wx</span>
-          <span>Source</span>
+          {PITCHER_COLUMNS.map(col => {
+            const isActive = sortKey === col.key;
+            const arrow = isActive ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
+            const alignCls = col.align === 'num' ? 'num' : col.align === 'ctr' ? 'ctr' : '';
+            return (
+              <button
+                key={col.key}
+                className={`pitchers-th ${alignCls} ${isActive ? 'active' : ''}`}
+                onClick={() => handleHeaderClick(col.key)}>
+                {col.label}{arrow}
+              </button>
+            );
+          })}
         </div>
         <div className="pitchers-tbody">
           {sorted.map((p, i) => <PitcherRow key={p.mlb_id || p.pitcher_mlb_id || i} p={p} />)}
@@ -281,7 +332,6 @@ function PitcherRow({ p }) {
   const fmt = (v, d = 2) => v == null ? '-' : Number(v).toFixed(d);
   const fmt0 = v => v == null ? '-' : Math.round(Number(v)).toString();
 
-  // Use lineup-confirmed indicator on opponent xwOBA
   const oppLabel = p.used_actual_lineup
     ? <span title="Lineup-confirmed">{fmt(p.opp_lineup_xwoba, 3)}</span>
     : <span title="Team aggregate (lineup not yet posted)" className="proj-tentative">{fmt(p.opp_lineup_xwoba, 3)}*</span>;
