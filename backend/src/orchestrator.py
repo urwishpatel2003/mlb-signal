@@ -52,6 +52,47 @@ MODEL_VERSION = "v2.0"  # reset for the new architecture
 
 # ---------- Edge calculation ----------
 
+import math
+
+
+def poisson_tail_prob(lam: float, line: float, side: str) -> float:
+    """
+    Probability of a Poisson(lam) variable beating the line on side.
+    side is "OVER" or "UNDER".
+
+    Sportsbook lines are typically half-integers (e.g. 8.5), which means
+    no push possibility — the bet either wins or loses cleanly.
+    For integer lines, we return P(X >= line+1) for OVER, P(X <= line-1) for UNDER
+    (excluding the push outcome from the win count).
+    """
+    if lam <= 0:
+        return 0.5  # degenerate; refuse to claim conviction
+
+    # P(X = k) = e^-lam * lam^k / k!
+    # Cumulative via iterative loop is safe up to ~50; beyond that use scipy.
+    is_half = abs(line - round(line)) > 0.01
+    threshold = math.ceil(line) if side == "OVER" else math.floor(line)
+
+    # P(X >= threshold)
+    if side == "OVER":
+        # 1 - P(X <= threshold - 1)
+        cdf = 0.0
+        term = math.exp(-lam)
+        for k in range(threshold):
+            cdf += term
+            term *= lam / (k + 1)
+        return max(0.0, min(1.0, 1.0 - cdf))
+    else:  # UNDER
+        cdf = 0.0
+        term = math.exp(-lam)
+        # P(X <= threshold) but exclude push for integer lines
+        upper = threshold if is_half else threshold - 1
+        for k in range(max(0, upper) + 1):
+            cdf += term
+            term *= lam / (k + 1)
+        return max(0.0, min(1.0, cdf))
+
+
 EDGE_THRESHOLDS = {
     "Total": 0.50,
     "K": 0.50,
@@ -119,6 +160,8 @@ def compute_edges_for_game(*, game_pk: int, game: dict,
     if market_total is not None:
         diff = full_total - market_total
         if abs(diff) >= EDGE_THRESHOLDS["Total"]:
+            lean = "OVER" if diff > 0 else "UNDER"
+            conviction = poisson_tail_prob(full_total, float(market_total), lean)
             edges.append({
                 "game_pk": game_pk,
                 "kind": "total",
@@ -130,7 +173,8 @@ def compute_edges_for_game(*, game_pk: int, game: dict,
                 "line": float(market_total),
                 "proj_value": full_total,
                 "edge": round(diff, 2),
-                "lean": "OVER" if diff > 0 else "UNDER",
+                "lean": lean,
+                "conviction_pct": round(conviction * 100, 1),
                 "flagged": True,
                 "notes": None,
             })
@@ -147,6 +191,8 @@ def compute_edges_for_game(*, game_pk: int, game: dict,
             diff = proj_vals[stat] - line
             if abs(diff) < EDGE_THRESHOLDS.get(stat, 0.7):
                 continue
+            prop_lean = "OVER" if diff > 0 else "UNDER"
+            prop_conviction = poisson_tail_prob(proj_vals[stat], float(line), prop_lean)
             edges.append({
                 "game_pk": game_pk,
                 "kind": "prop",
@@ -158,7 +204,8 @@ def compute_edges_for_game(*, game_pk: int, game: dict,
                 "line": float(line),
                 "proj_value": round(proj_vals[stat], 2),
                 "edge": round(diff, 2),
-                "lean": "OVER" if diff > 0 else "UNDER",
+                "lean": prop_lean,
+                "conviction_pct": round(prop_conviction * 100, 1),
                 "flagged": True,
                 "notes": None,
             })

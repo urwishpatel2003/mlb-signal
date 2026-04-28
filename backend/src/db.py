@@ -256,12 +256,12 @@ def insert_edge(run_id: int, e: dict) -> int:
         INSERT INTO edges (
           run_id, game_pk, kind, category, pitcher_mlb_id, pitcher_name,
           team_code, opp_team_code, line, proj_value, edge, lean,
-          confidence_tier, flagged, notes
+          confidence_tier, conviction_pct, flagged, notes
         ) VALUES (
           %(run_id)s, %(game_pk)s, %(kind)s, %(category)s, %(pitcher_mlb_id)s,
           %(pitcher_name)s, %(team_code)s, %(opp_team_code)s, %(line)s,
-          %(proj_value)s, %(edge)s, %(lean)s, %(confidence_tier)s, %(flagged)s,
-          %(notes)s
+          %(proj_value)s, %(edge)s, %(lean)s, %(confidence_tier)s,
+          %(conviction_pct)s, %(flagged)s, %(notes)s
         )
         RETURNING edge_id
         """,
