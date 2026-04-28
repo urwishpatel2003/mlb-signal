@@ -228,6 +228,11 @@ def get_schedule(target_date: Optional[date] = None) -> list[Game]:
                 log.error("Failed to parse game %s: %s", raw.get("gamePk"), e)
     return games
 
+TEAM_ABBR_NORMALIZATION = {
+    "AZ": "ARI",
+    "OAK": "ATH",
+    "CHW": "CWS",
+}
 
 def _parse_game(raw: dict) -> Game:
     teams = raw.get("teams", {})
@@ -236,7 +241,8 @@ def _parse_game(raw: dict) -> Game:
 
     def abbr(team_block: dict) -> str:
         t = team_block.get("team", {})
-        return t.get("abbreviation") or t.get("teamCode", "").upper() or "?"
+        raw_abbr = t.get("abbreviation") or t.get("teamCode", "").upper() or "?"
+        return TEAM_ABBR_NORMALIZATION.get(raw_abbr, raw_abbr)
 
     def record(team_block: dict) -> str:
         rec = team_block.get("leagueRecord", {})
