@@ -37,7 +37,7 @@ def _send(title: str, body: str, priority: str = "default",
     if not _is_configured():
         return False
     headers = {
-        "Title": title,
+        "Title": title.encode("ascii", "ignore").decode("ascii"),
         "Priority": priority,
     }
     if tags:
