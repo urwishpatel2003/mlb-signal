@@ -1,5 +1,5 @@
 /* ============================================================================
-   QuAInt MLB Signal — Editorial Dashboard
+   QuAInt MLB Signal - Editorial Dashboard
    ============================================================================
    Aesthetic: Financial broadsheet meets sports almanac. Cream paper, deep ink,
    single warm accent (vermillion). Display: Fraunces (high-contrast serif).
@@ -7,7 +7,6 @@
    ============================================================================ */
 
 :root {
-  /* Tokens */
   --paper:   #f6f0e4;
   --paper-2: #ece2cd;
   --ink:     #1a1814;
@@ -34,7 +33,6 @@ html, body {
   font-family: var(--body);
   font-size: 15px;
   line-height: 1.5;
-  /* Subtle paper texture via stacked gradients */
   background-image:
     radial-gradient(circle at 25% 10%, rgba(196, 80, 43, 0.018) 0%, transparent 40%),
     radial-gradient(circle at 80% 60%, rgba(77, 107, 58, 0.018) 0%, transparent 40%),
@@ -45,10 +43,6 @@ html, body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
-
-/* ============================================================================
-   Layout
-   ============================================================================ */
 
 .app {
   max-width: 1280px;
@@ -145,7 +139,7 @@ html, body {
 }
 
 /* ============================================================================
-   Headline / section header
+   Section header
    ============================================================================ */
 
 .section-header {
@@ -175,111 +169,175 @@ html, body {
 }
 
 /* ============================================================================
-   Edges list
+   Edges table
    ============================================================================ */
 
-.edges {
+.edges-table {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  border: 1px solid var(--rule);
+  background: var(--paper);
 }
 
-.edge {
+.edges-thead,
+.edge-row {
   display: grid;
-  grid-template-columns: 36px 1fr 60px 90px 90px 70px 80px;
+  grid-template-columns:
+    minmax(180px, 1.6fr)   /* Subject */
+    minmax(160px, 1.4fr)   /* Market */
+    70px                    /* Line */
+    80px                    /* Pick */
+    100px                   /* Projection */
+    minmax(180px, 1fr);     /* Conviction */
   gap: 14px;
   align-items: center;
-  padding: 14px 12px;
+  padding: 10px 16px;
+}
+
+.edges-thead {
+  background: var(--paper-2);
+  border-bottom: 2px solid var(--ink);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  font-weight: 700;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.edges-thead .num { text-align: right; }
+
+.edge-row {
   border-bottom: 1px solid var(--rule);
   font-size: 14px;
   transition: background 0.1s;
 }
 
-.edge:hover { background: rgba(196, 80, 43, 0.04); }
+.edge-row:last-child { border-bottom: none; }
+.edge-row:hover { background: rgba(196, 80, 43, 0.04); }
 
-.edge .rank {
-  font-family: var(--mono);
-  font-weight: 700;
-  color: var(--ink-3);
-  font-size: 12px;
-}
-
-.edge .label {
-  font-family: var(--body);
-}
-
-.edge .label .matchup {
+.cell-subject .subject-main {
+  font-family: var(--display);
+  font-size: 17px;
   font-weight: 600;
   color: var(--ink);
+  letter-spacing: -0.01em;
 }
 
-.edge .label .sub {
-  font-size: 12px;
+.cell-subject .subject-sub {
+  font-family: var(--mono);
+  font-size: 10px;
   color: var(--ink-3);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   margin-top: 2px;
 }
 
-.edge .badge {
-  display: inline-block;
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  padding: 3px 8px;
-  border-radius: 2px;
-  background: var(--paper-2);
+.cell-market {
+  font-family: var(--body);
+  font-size: 13px;
   color: var(--ink-2);
-  text-transform: uppercase;
+  font-weight: 500;
 }
 
-.edge .badge.tier-1 {
-  background: var(--vermillion);
-  color: var(--paper);
+.cell-num {
+  font-family: var(--mono);
+  font-size: 14px;
+  text-align: right;
+  font-feature-settings: 'tnum';
+  color: var(--ink-2);
 }
 
-.edge .badge.tier-2 {
-  background: var(--gold);
-  color: var(--paper);
+.cell-num.cell-proj {
+  color: var(--ink);
+  font-weight: 600;
 }
 
-.edge .badge.tier-3 {
-  background: var(--paper-2);
-  color: var(--ink-3);
-}
-
-.edge .lean {
+.cell-pick {
   font-family: var(--mono);
   font-weight: 700;
   font-size: 12px;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
+  text-align: center;
+  padding: 4px 0;
+  border-radius: 2px;
 }
 
-.edge .lean.OVER  { color: var(--moss); }
-.edge .lean.UNDER { color: var(--vermillion-deep); }
+.cell-pick.lean-OVER {
+  color: var(--moss);
+  background: rgba(77, 107, 58, 0.08);
+}
 
-.edge .num {
+.cell-pick.lean-UNDER {
+  color: var(--vermillion-deep);
+  background: rgba(196, 80, 43, 0.08);
+}
+
+/* Conviction cell with bar */
+
+.cell-conviction {
   font-family: var(--mono);
-  font-size: 13px;
-  text-align: right;
-  font-feature-settings: 'tnum';
 }
 
-.edge .num.proj { color: var(--ink-2); font-weight: 500; }
+.conv-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 
-.edge .edge-val {
+.conv-value {
   font-family: var(--display);
   font-style: italic;
   font-weight: 700;
   font-size: 18px;
-  text-align: right;
   font-feature-settings: 'tnum';
+  min-width: 44px;
+  color: var(--ink);
 }
 
-.edge .edge-val.pos { color: var(--moss); }
-.edge .edge-val.neg { color: var(--vermillion); }
+.conv-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--paper-2);
+  border-radius: 1px;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+}
+
+.conv-bar-fill {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.conv-bar.conv-strong .conv-bar-fill { background: var(--vermillion); }
+.conv-bar.conv-medium .conv-bar-fill { background: var(--gold); }
+.conv-bar.conv-weak   .conv-bar-fill { background: var(--ink-3); }
+
+.conv-na {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tier-pill {
+  display: inline-block;
+  padding: 2px 6px;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  font-size: 9px;
+  font-weight: 700;
+}
 
 /* ============================================================================
-   Game cards
+   Game cards (Games tab)
    ============================================================================ */
 
 .games {
@@ -444,7 +502,7 @@ html, body {
 }
 
 .loading::after {
-  content: ' ●';
+  content: ' .';
   animation: pulse 1.4s infinite;
 }
 
@@ -469,11 +527,40 @@ html, body {
   justify-content: space-between;
 }
 
-@media (max-width: 700px) {
-  .app { padding: 18px 14px 48px; }
-  .edge {
-    grid-template-columns: 30px 1fr auto;
+@media (max-width: 900px) {
+  .edges-thead,
+  .edge-row {
+    grid-template-columns:
+      minmax(140px, 1.4fr)
+      minmax(100px, 1fr)
+      60px
+      70px
+      80px
+      120px;
     gap: 8px;
+    padding: 10px;
   }
-  .edge .lean, .edge .num.line, .edge .num.proj { display: none; }
+  .conv-bar { display: none; }  /* Drop the bar on narrow screens, keep the % */
+  .cell-market { font-size: 11px; }
+  .cell-subject .subject-main { font-size: 14px; }
+}
+
+@media (max-width: 640px) {
+  .app { padding: 18px 14px 48px; }
+  .edges-thead { display: none; }
+  .edge-row {
+    grid-template-columns: 1fr 60px;
+    grid-template-areas:
+      "subject conv"
+      "market  pick"
+      "line    proj";
+    gap: 4px 8px;
+    padding: 12px 10px;
+  }
+  .cell-subject { grid-area: subject; }
+  .cell-market { grid-area: market; }
+  .cell-num.cell-proj { grid-area: proj; }
+  .cell-num:not(.cell-proj) { grid-area: line; }
+  .cell-pick { grid-area: pick; }
+  .cell-conviction { grid-area: conv; text-align: right; }
 }

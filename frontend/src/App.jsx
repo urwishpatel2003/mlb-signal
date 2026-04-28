@@ -4,6 +4,16 @@ const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
 const TABS = ['Edges', 'Games', 'Performance'];
 
+// Map internal category codes to user-facing market labels
+const MARKET_LABELS = {
+  Total: 'Game Total',
+  K:     'Pitcher Strikeouts',
+  Hits:  'Pitcher Hits Allowed',
+  ER:    'Pitcher Earned Runs',
+  Outs:  'Pitcher Outs Recorded',
+  BB:    'Pitcher Walks',
+};
+
 export default function App() {
   const [tab, setTab] = useState('Edges');
   const [slate, setSlate] = useState(null);
@@ -62,8 +72,8 @@ export default function App() {
       )}
 
       <footer className="footer">
-        <span>QuAInt MLB Signal · Vol II</span>
-        <span>Manual review required · Not financial advice</span>
+        <span>QuAInt MLB Signal &middot; Vol II</span>
+        <span>Manual review required &middot; Not financial advice</span>
       </footer>
     </div>
   );
@@ -79,7 +89,7 @@ function Masthead({ slate }) {
   return (
     <header className="masthead">
       <div className="masthead-top">
-        <span>QuAInt · MLB Edition</span>
+        <span>QuAInt &middot; MLB Edition</span>
         <span>{dateStr.toUpperCase()}</span>
       </div>
       <h1>The <span className="em">Signal</span>.</h1>
@@ -95,51 +105,98 @@ function Masthead({ slate }) {
 }
 
 function EdgesView({ edges }) {
-  if (!edges || edges.length === 0) return <div className="empty">No edges flagged on today's slate.</div>;
+  if (!edges || edges.length === 0) {
+    return <div className="empty">No edges flagged on today's slate.</div>;
+  }
+
+  // Sort: highest conviction first, ties broken by edge magnitude
+  const sorted = [...edges].sort((a, b) => {
+    const ca = a.conviction_pct ?? -1;
+    const cb = b.conviction_pct ?? -1;
+    if (cb !== ca) return cb - ca;
+    return Math.abs(b.edge) - Math.abs(a.edge);
+  });
+
   return (
     <section>
       <div className="section-header">
         <h2>Edges, ranked.</h2>
-        <span className="deck">By magnitude · Tier 1 highest conviction</span>
+        <span className="deck">By conviction &middot; Poisson-implied probability vs market line</span>
       </div>
-      <div className="edges">
-        {edges.map((e, i) => <EdgeRow key={e.edge_id || i} edge={e} rank={i + 1} />)}
+
+      <div className="edges-table">
+        <div className="edges-thead">
+          <span>Team / Pitcher</span>
+          <span>Market</span>
+          <span className="num">Line</span>
+          <span>Pick</span>
+          <span className="num">Projection</span>
+          <span>Conviction</span>
+        </div>
+        <div className="edges-tbody">
+          {sorted.map((e, i) => <EdgeRow key={e.edge_id || i} edge={e} />)}
+        </div>
       </div>
     </section>
   );
 }
 
-function EdgeRow({ edge, rank }) {
-  const tier = edge.confidence_tier ?? 3;
+function EdgeRow({ edge }) {
   const isProp = edge.kind === 'prop';
-  const matchup = isProp
-    ? edge.pitcher_name?.split(',')[0] ?? '?'
-    : `${edge.team_code ?? ''} @ ${edge.opp_team_code ?? ''}`;
-  const sub = isProp
-    ? `${edge.team_code} v ${edge.opp_team_code} · ${edge.category}`
-    : 'Game total';
-  const edgeClass = edge.edge >= 0 ? 'pos' : 'neg';
+  const market = MARKET_LABELS[edge.category] || edge.category;
+
+  // Subject: matchup for game totals, pitcher name for props
+  const subject = isProp
+    ? edge.pitcher_name?.split(',')[0] ?? '—'
+    : `${edge.team_code ?? '?'} @ ${edge.opp_team_code ?? '?'}`;
+
+  // Subject sub-line: for props, show team-vs-opp; for totals, show edge magnitude
+  const subjectSub = isProp
+    ? `${edge.team_code ?? ''} v ${edge.opp_team_code ?? ''}`
+    : null;
+
+  const conv = edge.conviction_pct;
+  const tier = edge.confidence_tier ?? 3;
+  const isLowTrust = tier === 3 || conv == null;
+
+  // Color the conviction bar by quality bucket
+  let convBarClass = 'conv-bar';
+  if (conv != null) {
+    if (conv >= 75) convBarClass += ' conv-strong';
+    else if (conv >= 60) convBarClass += ' conv-medium';
+    else convBarClass += ' conv-weak';
+  }
+
   return (
-    <div className="edge">
-      <span className="rank">{String(rank).padStart(2, '0')}</span>
-      <div className="label">
-        <div className="matchup">{matchup}</div>
-        <div className="sub">{sub}</div>
+    <div className="edge-row">
+      <div className="cell-subject">
+        <div className="subject-main">{subject}</div>
+        {subjectSub && <div className="subject-sub">{subjectSub}</div>}
       </div>
-      <span className={`badge tier-${tier}`}>T{tier}</span>
-      <span className={`lean ${edge.lean}`}>{edge.lean}</span>
-      <span className="num line">L {Number(edge.line).toFixed(1)}</span>
-      <span className="num proj">→ {Number(edge.proj_value).toFixed(2)}</span>
-      <span className={`edge-val ${edgeClass}`}>
-        {edge.edge >= 0 ? '+' : ''}{Number(edge.edge).toFixed(2)}
-      </span>
+      <div className="cell-market">{market}</div>
+      <div className="cell-num">{Number(edge.line).toFixed(1)}</div>
+      <div className={`cell-pick lean-${edge.lean}`}>{edge.lean}</div>
+      <div className="cell-num cell-proj">{Number(edge.proj_value).toFixed(2)}</div>
+      <div className="cell-conviction">
+        {isLowTrust ? (
+          <span className="conv-na" title="Tier 3 or fallback projection">
+            n/a <span className="tier-pill">T{tier}</span>
+          </span>
+        ) : (
+          <div className="conv-cell">
+            <span className="conv-value">{Number(conv).toFixed(0)}%</span>
+            <div className={convBarClass}>
+              <div className="conv-bar-fill" style={{ width: `${Math.min(100, Math.max(0, conv))}%` }} />
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 function GamesView({ games, projections }) {
   if (!games || games.length === 0) return <div className="empty">No games scheduled today.</div>;
-  // Build a {game_pk: [away_proj, home_proj]} map
   const byGame = {};
   (projections || []).forEach(p => {
     if (!byGame[p.game_pk]) byGame[p.game_pk] = [];
@@ -149,7 +206,7 @@ function GamesView({ games, projections }) {
     <section>
       <div className="section-header">
         <h2>Tonight's games.</h2>
-        <span className="deck">Probables · projections · edge</span>
+        <span className="deck">Probables &middot; projections &middot; edge</span>
       </div>
       <div className="games">
         {games.map(g => (
@@ -174,7 +231,7 @@ function GameCard({ game, projs }) {
       {[awayProj, homeProj].filter(Boolean).map(p => (
         <div key={p.mlb_id} className="pitcher-line">
           <span className="name">{p.last_first?.split(',')[0]}</span>
-          <span className="sub">{p.team_code} · {p.hand}HP</span>
+          <span className="sub">{p.team_code} &middot; {p.hand}HP</span>
           <span className="sub">PA {p.pa_sample}</span>
           <span className="xera">xERA {Number(p.xera || 0).toFixed(2)}</span>
         </div>
@@ -207,7 +264,7 @@ function PerformanceView({ perf }) {
     <section>
       <div className="section-header">
         <h2>Track record.</h2>
-        <span className="deck">Rolling windows · 7d / 14d / 30d</span>
+        <span className="deck">Rolling windows &middot; 7d / 14d / 30d</span>
       </div>
       <div className="perf-grid">
         {perf.map((p, i) => (
@@ -217,8 +274,8 @@ function PerformanceView({ perf }) {
               {p.wins}-{p.losses}
             </div>
             <div className="sub">
-              Hit rate: {((p.hit_rate ?? 0) * 100).toFixed(1)}% ·
-              ROI: {((p.roi ?? 0) * 100).toFixed(1)}% ·
+              Hit rate: {((p.hit_rate ?? 0) * 100).toFixed(1)}% &middot;
+              ROI: {((p.roi ?? 0) * 100).toFixed(1)}% &middot;
               Profit: {(p.profit_units ?? 0).toFixed(2)} units
             </div>
           </div>
