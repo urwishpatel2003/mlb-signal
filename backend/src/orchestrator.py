@@ -39,7 +39,7 @@ from dataclasses import asdict
 from datetime import date, datetime
 from typing import Optional
 
-from . import db, mlb_api, projections, ntfy, dk_props
+from . import db, mlb_api, projections, ntfy, odds_props
 from .odds import attach_odds_to_games
 from .weather import enrich_weather_for_game
 from .park_factors import get_park_for_team
@@ -176,7 +176,7 @@ def compute_edges_for_game(*, game_pk: int, game: dict,
             continue   # never surface props on fallback projections
         # DK first, fall back to regressed estimate per market
         lines = estimate_book_lines(p)
-        dk_pitcher = dk_props.lookup_lines(p.last_first, _DK_LINES) if _DK_LINES else None
+        dk_pitcher = odds_props.lookup_lines(p.last_first, _DK_LINES) if _DK_LINES else None
         if dk_pitcher:
             lines.update(dk_pitcher)  # DK overrides estimate where data is available
         proj_vals = {"K": p.k, "Hits": p.hits, "ER": p.er, "Outs": p.outs}
@@ -280,7 +280,7 @@ def run(trigger: str = "manual") -> dict:
         # Fetch DK pitcher prop lines once per run (best-effort, falls back silently)
         global _DK_LINES
         try:
-            _DK_LINES = dk_props.fetch_pitcher_props_for_today()
+            _DK_LINES = odds_props.fetch_pitcher_props_for_today()
         except Exception as e:
             log.warning("DK pitcher props fetch failed (non-fatal): %s", e)
             _DK_LINES = {}
