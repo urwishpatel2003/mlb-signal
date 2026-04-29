@@ -281,6 +281,7 @@ def run(trigger: str = "manual") -> dict:
         global _DK_LINES
         try:
             _DK_LINES = odds_props.fetch_pitcher_props_for_today()
+            log.info("DK_LINES sample keys: %s", list(_DK_LINES.keys())[:5])
         except Exception as e:
             log.warning("DK pitcher props fetch failed (non-fatal): %s", e)
             _DK_LINES = {}
