@@ -24,7 +24,7 @@ production (set ALLOWED_ORIGINS env var).
 """
 from __future__ import annotations
 import os
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timezone, timedelta
 from typing import Optional
 import logging
 
@@ -74,7 +74,7 @@ def health():
 
 @app.get("/api/slate/today")
 def slate_today():
-    return _slate_for_date(date.today().isoformat())
+    et_now = datetime.now(timezone.utc) - timedelta(hours=4); return _slate_for_date(et_now.date().isoformat())
 
 
 @app.get("/api/slate/{slate_date}")
