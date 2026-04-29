@@ -147,6 +147,14 @@ def dedupe_grades(token: str):
     db.execute("DELETE FROM model_performance")
     db.execute("""
         DELETE FROM edge_results
+        WHERE edge_id IN (
+          SELECT e.edge_id FROM edges e
+          JOIN projection_runs pr ON pr.run_id = e.run_id
+          WHERE pr.run_date = '2026-04-28' AND e.kind = 'prop'
+        )
+    """)
+    db.execute("""
+        DELETE FROM edge_results
         WHERE edge_id NOT IN (
           SELECT MAX(e.edge_id)
           FROM edges e
