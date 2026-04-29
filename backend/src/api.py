@@ -139,11 +139,12 @@ def get_run_edges(run_id: int, flagged_only: bool = True):
     return [dict(e) for e in db.fetchall(sql, (run_id,))]
 
 
-@app.post("/api/admin/dedupe-grades")
-def dedupe_grades(x_admin_token: Optional[str] = Header(None, alias="X-Admin-Token")):
-    if x_admin_token != os.environ.get("ADMIN_TOKEN"):
+@app.get("/api/admin/dedupe-grades/{token}")
+def dedupe_grades(token: str):
+    if token != os.environ.get("ADMIN_TOKEN"):
         raise HTTPException(status_code=403, detail="Forbidden")
     before = db.fetchone("SELECT COUNT(*) AS c FROM edge_results")["c"]
+    db.execute("DELETE FROM model_performance")
     db.execute("""
         DELETE FROM edge_results
         WHERE edge_id NOT IN (
