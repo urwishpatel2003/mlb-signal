@@ -13,6 +13,15 @@ const MARKET_LABELS = {
   BB:    'Pitcher Walks',
 };
 
+const CATEGORY_SHORT = {
+  Total: 'Total',
+  K:     'Strikeouts',
+  Hits:  'Hits Allowed',
+  ER:    'Earned Runs',
+  Outs:  'Outs Recorded',
+  BB:    'Walks',
+};
+
 const SOURCE_LABELS = {
   statcast:    { label: 'Statcast', cls: 'src-statcast' },
   low_sample:  { label: 'Low Sample', cls: 'src-low' },
@@ -417,7 +426,8 @@ function GameCard({ game, projs }) {
 }
 
 // ============================================================================
-// Track Record - daily cards with category breakdown
+// Track Record - daily cards with category blocks, OVER/UNDER buckets,
+// click-to-expand plays
 // ============================================================================
 
 function PerformanceView({ perf }) {
@@ -429,7 +439,7 @@ function PerformanceView({ perf }) {
     <section>
       <div className="section-header">
         <h2>Track record.</h2>
-        <span className="deck">Cumulative & daily &middot; graded against actual outcomes</span>
+        <span className="deck">Cumulative & daily &middot; click any over/under bucket to see the plays</span>
       </div>
 
       {perf.overall && <OverallCard overall={perf.overall} />}
@@ -441,25 +451,24 @@ function PerformanceView({ perf }) {
   );
 }
 
-function sumCategoryGroup(group) {
-  return group.reduce(
-    (acc, c) => ({
-      wins:   acc.wins + c.wins,
-      losses: acc.losses + c.losses,
-      pushes: acc.pushes + c.pushes,
-      profit: acc.profit + c.profit_units,
-    }),
-    { wins: 0, losses: 0, pushes: 0, profit: 0 }
-  );
-}
-
 function fmtSign(n) {
   return n >= 0 ? `+${n.toFixed(2)}` : n.toFixed(2);
 }
 
 function fmtRate(g) {
   const d = g.wins + g.losses;
-  return d > 0 ? (g.wins / d * 100).toFixed(1) + '%' : '—';
+  return d > 0 ? (g.wins / d * 100).toFixed(0) + '%' : '—';
+}
+
+function sumGroup(items) {
+  return items.reduce(
+    (a, c) => ({
+      wins: a.wins + c.wins, losses: a.losses + c.losses,
+      pushes: a.pushes + (c.pushes || 0),
+      profit: a.profit + (c.profit_units || 0),
+    }),
+    { wins: 0, losses: 0, pushes: 0, profit: 0 }
+  );
 }
 
 function OverallCard({ overall }) {
@@ -470,8 +479,8 @@ function OverallCard({ overall }) {
 
   const totals = (overall.by_category || []).filter(c => c.kind === 'total');
   const props  = (overall.by_category || []).filter(c => c.kind === 'prop');
-  const totalsAgg = sumCategoryGroup(totals);
-  const propsAgg  = sumCategoryGroup(props);
+  const totalsAgg = sumGroup(totals);
+  const propsAgg  = sumGroup(props);
 
   return (
     <div className="track-overall">
@@ -517,10 +526,29 @@ function DayCard({ day }) {
     'en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }
   );
 
-  const totals = day.by_category.filter(c => c.kind === 'total');
-  const props  = day.by_category.filter(c => c.kind === 'prop');
-  const totalsAgg = sumCategoryGroup(totals);
-  const propsAgg  = sumCategoryGroup(props);
+  // Group buckets by (kind, category) to render category blocks
+  const byCat = {};
+  (day.buckets || []).forEach(b => {
+    const key = `${b.kind}:${b.category}`;
+    if (!byCat[key]) byCat[key] = { kind: b.kind, category: b.category, OVER: null, UNDER: null };
+    byCat[key][b.lean] = b;
+  });
+
+  // Order: game totals first, then props in K/Outs/ER/Hits/BB order
+  const propOrder = { Total: 0, K: 1, Outs: 2, ER: 3, Hits: 4, BB: 5 };
+  const sortedCats = Object.values(byCat).sort((a, b) => {
+    if (a.kind !== b.kind) return a.kind === 'total' ? -1 : 1;
+    return (propOrder[a.category] ?? 9) - (propOrder[b.category] ?? 9);
+  });
+
+  const totalsCats = sortedCats.filter(c => c.kind === 'total');
+  const propsCats  = sortedCats.filter(c => c.kind === 'prop');
+
+  // Aggregate sections
+  const allTotals = totalsCats.flatMap(c => [c.OVER, c.UNDER].filter(Boolean));
+  const allProps  = propsCats.flatMap(c => [c.OVER, c.UNDER].filter(Boolean));
+  const totalsAgg = sumGroup(allTotals);
+  const propsAgg  = sumGroup(allProps);
 
   return (
     <div className={`day-card ${profitClass}`}>
@@ -533,36 +561,116 @@ function DayCard({ day }) {
         </div>
       </div>
 
-      {totals.length > 0 && (
-        <div className="day-section">
-          <div className="day-section-header">
-            <span className="section-name">Game Totals</span>
-            <span className="section-stats">
-              {totalsAgg.wins}-{totalsAgg.losses}{totalsAgg.pushes ? `-${totalsAgg.pushes}` : ''} &middot; {fmtRate(totalsAgg)} &middot; <span className={totalsAgg.profit >= 0 ? 'pos' : 'neg'}>{fmtSign(totalsAgg.profit)}u</span>
-            </span>
-          </div>
-        </div>
+      {totalsCats.length > 0 && (
+        <CategorySection
+          title="Game Totals"
+          agg={totalsAgg}
+          cats={totalsCats}
+        />
       )}
 
-      {props.length > 0 && (
-        <div className="day-section">
-          <div className="day-section-header">
-            <span className="section-name">Pitcher Props</span>
-            <span className="section-stats">
-              {propsAgg.wins}-{propsAgg.losses}{propsAgg.pushes ? `-${propsAgg.pushes}` : ''} &middot; {fmtRate(propsAgg)} &middot; <span className={propsAgg.profit >= 0 ? 'pos' : 'neg'}>{fmtSign(propsAgg.profit)}u</span>
-            </span>
+      {propsCats.length > 0 && (
+        <CategorySection
+          title="Pitcher Props"
+          agg={propsAgg}
+          cats={propsCats}
+        />
+      )}
+    </div>
+  );
+}
+
+function CategorySection({ title, agg, cats }) {
+  return (
+    <div className="cat-section">
+      <div className="cat-section-header">
+        <span className="cat-section-name">{title}</span>
+        <span className="cat-section-stats">
+          {agg.wins}-{agg.losses}{agg.pushes ? `-${agg.pushes}` : ''} &middot; {fmtRate(agg)} &middot; <span className={agg.profit >= 0 ? 'pos' : 'neg'}>{fmtSign(agg.profit)}u</span>
+        </span>
+      </div>
+      <div className="cat-blocks">
+        {cats.map(c => <CategoryBlock key={`${c.kind}:${c.category}`} cat={c} />)}
+      </div>
+    </div>
+  );
+}
+
+function CategoryBlock({ cat }) {
+  // Tally combined over+under for the block summary
+  const combined = sumGroup([cat.OVER, cat.UNDER].filter(Boolean));
+
+  return (
+    <div className="cat-block">
+      <div className="cat-block-header">
+        <span className="cat-block-name">{CATEGORY_SHORT[cat.category] ?? cat.category}</span>
+        <span className="cat-block-stats">
+          {combined.wins}-{combined.losses}{combined.pushes ? `-${combined.pushes}` : ''} &middot;
+          <span className={combined.profit >= 0 ? 'pos' : 'neg'}> {fmtSign(combined.profit)}u</span>
+        </span>
+      </div>
+      <div className="cat-block-buckets">
+        {cat.OVER && <Bucket bucket={cat.OVER} />}
+        {cat.UNDER && <Bucket bucket={cat.UNDER} />}
+      </div>
+    </div>
+  );
+}
+
+function Bucket({ bucket }) {
+  const [open, setOpen] = useState(false);
+  const decisive = bucket.wins + bucket.losses;
+  const hitRate = decisive > 0 ? (bucket.wins / decisive * 100) : 0;
+  const profitClass = bucket.profit_units >= 0 ? 'pos' : 'neg';
+  const leanCls = bucket.lean === 'OVER' ? 'lean-OVER' : 'lean-UNDER';
+
+  return (
+    <div className={`bucket ${open ? 'open' : ''}`}>
+      <button
+        type="button"
+        className={`bucket-header ${leanCls}`}
+        onClick={() => setOpen(!open)}>
+        <span className="bucket-lean">{bucket.lean}</span>
+        <span className="bucket-wl">{bucket.wins}-{bucket.losses}{bucket.pushes ? `-${bucket.pushes}` : ''}</span>
+        <span className="bucket-rate">{decisive > 0 ? hitRate.toFixed(0) + '%' : '—'}</span>
+        <span className={`bucket-units ${profitClass}`}>{fmtSign(bucket.profit_units)}u</span>
+        <span className="bucket-chev">{open ? '▾' : '▸'}</span>
+      </button>
+      {open && (
+        <div className="bucket-plays">
+          <div className="play-thead">
+            <span>Subject</span>
+            <span className="num">Line</span>
+            <span className="num">Proj</span>
+            <span className="num">Actual</span>
+            <span>Result</span>
+            <span className="num">P/L</span>
           </div>
-          <div className="day-prop-grid">
-            {props.map(c => (
-              <div key={c.category} className="prop-tile">
-                <div className="prop-cat">{MARKET_LABELS[c.category]?.replace('Pitcher ', '') ?? c.category}</div>
-                <div className="prop-wl">{c.wins}-{c.losses}{c.pushes ? `-${c.pushes}` : ''}</div>
-                <div className={`prop-units ${c.profit_units >= 0 ? 'pos' : 'neg'}`}>{fmtSign(c.profit_units)}u</div>
-              </div>
-            ))}
-          </div>
+          {bucket.plays.map((p, i) => <PlayRow key={i} play={p} />)}
         </div>
       )}
+    </div>
+  );
+}
+
+function PlayRow({ play }) {
+  const resultCls = play.result === 'WIN' ? 'res-win'
+                   : play.result === 'LOSS' ? 'res-loss'
+                   : 'res-push';
+  const profitClass = play.profit_units >= 0 ? 'pos' : 'neg';
+  const fmt = (v, d) => v == null ? '-' : Number(v).toFixed(d);
+  // Pitcher names come as "Last, First" - render as "Last"
+  const subject = play.subject?.includes(',')
+    ? play.subject.split(',')[0].trim()
+    : play.subject;
+  return (
+    <div className="play-row">
+      <span className="play-subject">{subject}</span>
+      <span className="num">{fmt(play.line, 1)}</span>
+      <span className="num">{fmt(play.proj_value, 2)}</span>
+      <span className="num">{fmt(play.actual_value, 0)}</span>
+      <span className={`play-result ${resultCls}`}>{play.result}</span>
+      <span className={`num play-profit ${profitClass}`}>{fmtSign(play.profit_units)}</span>
     </div>
   );
 }

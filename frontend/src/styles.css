@@ -1025,3 +1025,267 @@ html, body {
   .day-header { flex-direction: column; gap: 6px; align-items: flex-start; }
   .day-summary { gap: 10px; }
 }
+
+/* ============================================================================
+   Track Record v3 - category blocks, OVER/UNDER buckets, click-to-expand plays
+   Append to existing styles.css
+   ============================================================================ */
+
+.cat-section {
+  border-top: 1px solid var(--rule);
+  padding-top: 14px;
+  margin-top: 14px;
+}
+
+.cat-section:first-of-type {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.cat-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+
+.cat-section-name {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.cat-section-stats {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-2);
+  font-feature-settings: 'tnum';
+}
+
+.cat-section-stats .pos { color: var(--moss); font-weight: 700; }
+.cat-section-stats .neg { color: var(--vermillion); font-weight: 700; }
+
+.cat-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cat-block {
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  padding: 10px 12px;
+}
+
+.cat-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+
+.cat-block-name {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+
+.cat-block-stats {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+  font-feature-settings: 'tnum';
+}
+
+.cat-block-stats .pos { color: var(--moss); font-weight: 700; }
+.cat-block-stats .neg { color: var(--vermillion); font-weight: 700; }
+
+.cat-block-buckets {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+/* -------------------------------- Buckets ----------------------------------- */
+
+.bucket {
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  overflow: hidden;
+}
+
+.bucket-header {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 70px 1fr 60px 70px 18px;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 12px;
+  text-align: left;
+  color: var(--ink-2);
+  transition: background 0.1s;
+}
+
+.bucket-header:hover { background: rgba(196, 80, 43, 0.04); }
+
+.bucket-lean {
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-align: center;
+  padding: 3px 0;
+  border-radius: 2px;
+}
+
+.bucket-header.lean-OVER .bucket-lean {
+  color: var(--moss);
+  background: rgba(77, 107, 58, 0.1);
+}
+
+.bucket-header.lean-UNDER .bucket-lean {
+  color: var(--vermillion-deep);
+  background: rgba(196, 80, 43, 0.1);
+}
+
+.bucket-wl {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.bucket-rate {
+  text-align: right;
+  font-feature-settings: 'tnum';
+}
+
+.bucket-units {
+  text-align: right;
+  font-weight: 700;
+  font-feature-settings: 'tnum';
+}
+
+.bucket-units.pos { color: var(--moss); }
+.bucket-units.neg { color: var(--vermillion); }
+
+.bucket-chev {
+  text-align: center;
+  color: var(--ink-3);
+  font-size: 14px;
+  transition: color 0.1s;
+}
+
+.bucket.open .bucket-chev { color: var(--vermillion); }
+.bucket.open .bucket-header { background: rgba(196, 80, 43, 0.04); }
+
+/* -------------------------------- Plays ------------------------------------- */
+
+.bucket-plays {
+  border-top: 1px solid var(--rule);
+  padding: 0;
+  background: var(--paper-2);
+}
+
+.play-thead,
+.play-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 2fr) 60px 60px 60px 70px 70px;
+  gap: 10px;
+  padding: 8px 12px;
+  align-items: center;
+  font-family: var(--mono);
+  font-feature-settings: 'tnum';
+  font-size: 11px;
+}
+
+.play-thead {
+  background: var(--paper);
+  border-bottom: 1px solid var(--rule);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-weight: 700;
+}
+
+.play-thead .num { text-align: right; }
+
+.play-row {
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-2);
+}
+
+.play-row:last-child { border-bottom: none; }
+.play-row:hover { background: rgba(196, 80, 43, 0.04); }
+
+.play-row .num { text-align: right; }
+
+.play-subject {
+  font-family: var(--display);
+  font-weight: 600;
+  color: var(--ink);
+  font-size: 13px;
+  letter-spacing: -0.01em;
+}
+
+.play-result {
+  text-align: center;
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  padding: 2px 0;
+  border-radius: 2px;
+}
+
+.play-result.res-win {
+  color: var(--moss);
+  background: rgba(77, 107, 58, 0.12);
+}
+
+.play-result.res-loss {
+  color: var(--vermillion-deep);
+  background: rgba(196, 80, 43, 0.12);
+}
+
+.play-result.res-push {
+  color: var(--ink-3);
+  background: var(--paper-2);
+}
+
+.play-profit { font-weight: 700; }
+.play-profit.pos { color: var(--moss); }
+.play-profit.neg { color: var(--vermillion); }
+
+/* -------------------------------- Mobile ------------------------------------ */
+
+@media (max-width: 700px) {
+  .bucket-header {
+    grid-template-columns: 60px 1fr 50px 60px 16px;
+    gap: 6px;
+    padding: 8px;
+    font-size: 11px;
+  }
+  .play-thead,
+  .play-row {
+    grid-template-columns: minmax(100px, 1.5fr) 50px 50px 60px 60px;
+    gap: 6px;
+    padding: 6px 8px;
+    font-size: 10px;
+  }
+  /* Hide the Proj column on phone - keeps the row narrow */
+  .play-thead > :nth-child(3),
+  .play-row > :nth-child(3) {
+    display: none;
+  }
+}

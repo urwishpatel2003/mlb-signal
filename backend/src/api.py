@@ -238,40 +238,59 @@ def admin_grade(target_date: Optional[str] = None,
         return TriggerResponse(status="failure", message=str(e))
         
         
+
+
+
 @app.get("/api/performance/by-date")
 def performance_by_date():
     """
-    Returns daily performance breakdown for the Track Record dashboard.
+    Returns daily performance broken down by kind/category/lean,
+    with the full list of plays per (kind, category, lean) bucket.
+
     Schema:
       [
         {
           "run_date": "2026-04-28",
           "summary": {"wins": 41, "losses": 23, "pushes": 1, "profit_units": 15.81},
-          "by_category": [
-            {"kind": "total", "category": "Total", "wins": 9, "losses": 3, "pushes": 0, "profit_units": 5.4},
-            {"kind": "prop", "category": "K", "wins": 8, "losses": 5, "pushes": 0, "profit_units": 2.1},
+          "buckets": [
+            {
+              "kind": "total", "category": "Total", "lean": "OVER",
+              "wins": 5, "losses": 1, "pushes": 0, "profit_units": 3.4,
+              "plays": [
+                {"matchup": "BOS @ TOR", "pitcher_name": null,
+                 "line": 8.5, "actual_value": 11, "result": "WIN",
+                 "profit_units": 0.91, "edge_value": 2.88},
+                ...
+              ]
+            },
             ...
           ]
         },
         ...
       ]
-    Most recent date first.
     """
     rows = db.fetchall("""
         SELECT
           pr.run_date,
           e.kind,
           e.category,
-          COUNT(*) FILTER (WHERE er.result = 'WIN')   AS wins,
-          COUNT(*) FILTER (WHERE er.result = 'LOSS')  AS losses,
-          COUNT(*) FILTER (WHERE er.result = 'PUSH')  AS pushes,
-          COALESCE(SUM(er.profit_units), 0)::float    AS profit_units
+          e.lean,
+          e.team_code,
+          e.opp_team_code,
+          e.pitcher_name,
+          e.line,
+          e.proj_value,
+          e.edge,
+          er.actual_value,
+          er.result,
+          er.profit_units
         FROM edge_results er
         JOIN edges e ON e.edge_id = er.edge_id
         JOIN projection_runs pr ON pr.run_id = e.run_id
         WHERE e.flagged = TRUE
-        GROUP BY pr.run_date, e.kind, e.category
-        ORDER BY pr.run_date DESC, e.kind, e.category
+          AND e.lean IN ('OVER','UNDER')
+        ORDER BY pr.run_date DESC, e.kind, e.category, e.lean,
+                 ABS(e.edge) DESC
     """)
 
     by_date = {}
@@ -281,30 +300,68 @@ def performance_by_date():
             by_date[d] = {
                 "run_date": d,
                 "summary": {"wins": 0, "losses": 0, "pushes": 0, "profit_units": 0.0},
-                "by_category": []
+                "buckets": {},  # keyed by (kind, category, lean)
             }
-        wins = int(r["wins"] or 0)
-        losses = int(r["losses"] or 0)
-        pushes = int(r["pushes"] or 0)
-        profit = float(r["profit_units"] or 0)
 
-        by_date[d]["summary"]["wins"] += wins
-        by_date[d]["summary"]["losses"] += losses
-        by_date[d]["summary"]["pushes"] += pushes
+        result = r["result"]
+        profit = float(r["profit_units"] or 0)
+        # Tally summary
+        if result == "WIN":  by_date[d]["summary"]["wins"] += 1
+        elif result == "LOSS": by_date[d]["summary"]["losses"] += 1
+        elif result == "PUSH": by_date[d]["summary"]["pushes"] += 1
         by_date[d]["summary"]["profit_units"] = round(
             by_date[d]["summary"]["profit_units"] + profit, 2
         )
 
-        by_date[d]["by_category"].append({
+        # Bucket by (kind, category, lean)
+        bk = (r["kind"], r["category"], r["lean"])
+        b = by_date[d]["buckets"].setdefault(bk, {
             "kind": r["kind"],
             "category": r["category"],
-            "wins": wins,
-            "losses": losses,
-            "pushes": pushes,
+            "lean": r["lean"],
+            "wins": 0, "losses": 0, "pushes": 0,
+            "profit_units": 0.0,
+            "plays": [],
+        })
+        if result == "WIN":  b["wins"] += 1
+        elif result == "LOSS": b["losses"] += 1
+        elif result == "PUSH": b["pushes"] += 1
+        b["profit_units"] = round(b["profit_units"] + profit, 2)
+
+        # Compose play row. For totals use matchup, for props use pitcher name.
+        is_total = r["kind"] == "total"
+        subject = (
+            f"{r['team_code'] or '?'} @ {r['opp_team_code'] or '?'}"
+            if is_total
+            else (r["pitcher_name"] or "?")
+        )
+        b["plays"].append({
+            "subject": subject,
+            "team_code": r["team_code"],
+            "opp_team_code": r["opp_team_code"],
+            "line": float(r["line"]) if r["line"] is not None else None,
+            "proj_value": float(r["proj_value"]) if r["proj_value"] is not None else None,
+            "edge": float(r["edge"]) if r["edge"] is not None else None,
+            "actual_value": float(r["actual_value"]) if r["actual_value"] is not None else None,
+            "result": result,
             "profit_units": round(profit, 2),
         })
 
-    return list(by_date.values())
+    # Convert dict buckets to list, in stable order
+    result_list = []
+    for d, payload in sorted(by_date.items(), reverse=True):
+        bucket_list = sorted(
+            payload["buckets"].values(),
+            key=lambda b: (
+                0 if b["kind"] == "total" else 1,
+                {"Total": 0, "K": 1, "Outs": 2, "ER": 3, "Hits": 4, "BB": 5}.get(b["category"], 9),
+                0 if b["lean"] == "OVER" else 1,
+            )
+        )
+        payload["buckets"] = bucket_list
+        result_list.append(payload)
+    return result_list
+
 
 
 @app.get("/api/performance/overall")
