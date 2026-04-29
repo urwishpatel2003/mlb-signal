@@ -236,3 +236,113 @@ def admin_grade(target_date: Optional[str] = None,
     except Exception as e:
         log.exception("Grader failed")
         return TriggerResponse(status="failure", message=str(e))
+        
+        
+@app.get("/api/performance/by-date")
+def performance_by_date():
+    """
+    Returns daily performance breakdown for the Track Record dashboard.
+    Schema:
+      [
+        {
+          "run_date": "2026-04-28",
+          "summary": {"wins": 41, "losses": 23, "pushes": 1, "profit_units": 15.81},
+          "by_category": [
+            {"kind": "total", "category": "Total", "wins": 9, "losses": 3, "pushes": 0, "profit_units": 5.4},
+            {"kind": "prop", "category": "K", "wins": 8, "losses": 5, "pushes": 0, "profit_units": 2.1},
+            ...
+          ]
+        },
+        ...
+      ]
+    Most recent date first.
+    """
+    rows = db.fetchall("""
+        SELECT
+          pr.run_date,
+          e.kind,
+          e.category,
+          COUNT(*) FILTER (WHERE er.result = 'WIN')   AS wins,
+          COUNT(*) FILTER (WHERE er.result = 'LOSS')  AS losses,
+          COUNT(*) FILTER (WHERE er.result = 'PUSH')  AS pushes,
+          COALESCE(SUM(er.profit_units), 0)::float    AS profit_units
+        FROM edge_results er
+        JOIN edges e ON e.edge_id = er.edge_id
+        JOIN projection_runs pr ON pr.run_id = e.run_id
+        WHERE e.flagged = TRUE
+        GROUP BY pr.run_date, e.kind, e.category
+        ORDER BY pr.run_date DESC, e.kind, e.category
+    """)
+
+    by_date = {}
+    for r in rows:
+        d = str(r["run_date"])
+        if d not in by_date:
+            by_date[d] = {
+                "run_date": d,
+                "summary": {"wins": 0, "losses": 0, "pushes": 0, "profit_units": 0.0},
+                "by_category": []
+            }
+        wins = int(r["wins"] or 0)
+        losses = int(r["losses"] or 0)
+        pushes = int(r["pushes"] or 0)
+        profit = float(r["profit_units"] or 0)
+
+        by_date[d]["summary"]["wins"] += wins
+        by_date[d]["summary"]["losses"] += losses
+        by_date[d]["summary"]["pushes"] += pushes
+        by_date[d]["summary"]["profit_units"] = round(
+            by_date[d]["summary"]["profit_units"] + profit, 2
+        )
+
+        by_date[d]["by_category"].append({
+            "kind": r["kind"],
+            "category": r["category"],
+            "wins": wins,
+            "losses": losses,
+            "pushes": pushes,
+            "profit_units": round(profit, 2),
+        })
+
+    return list(by_date.values())
+
+
+@app.get("/api/performance/overall")
+def performance_overall():
+    """All-time totals broken down by kind/category."""
+    rows = db.fetchall("""
+        SELECT
+          e.kind,
+          e.category,
+          COUNT(*) FILTER (WHERE er.result = 'WIN')   AS wins,
+          COUNT(*) FILTER (WHERE er.result = 'LOSS')  AS losses,
+          COUNT(*) FILTER (WHERE er.result = 'PUSH')  AS pushes,
+          COALESCE(SUM(er.profit_units), 0)::float    AS profit_units
+        FROM edge_results er
+        JOIN edges e ON e.edge_id = er.edge_id
+        WHERE e.flagged = TRUE
+        GROUP BY e.kind, e.category
+        ORDER BY e.kind, e.category
+    """)
+
+    overall = {"wins": 0, "losses": 0, "pushes": 0, "profit_units": 0.0}
+    by_category = []
+    for r in rows:
+        wins = int(r["wins"] or 0)
+        losses = int(r["losses"] or 0)
+        pushes = int(r["pushes"] or 0)
+        profit = float(r["profit_units"] or 0)
+        overall["wins"] += wins
+        overall["losses"] += losses
+        overall["pushes"] += pushes
+        overall["profit_units"] = round(overall["profit_units"] + profit, 2)
+        by_category.append({
+            "kind": r["kind"],
+            "category": r["category"],
+            "wins": wins,
+            "losses": losses,
+            "pushes": pushes,
+            "profit_units": round(profit, 2),
+        })
+
+    return {"overall": overall, "by_category": by_category}

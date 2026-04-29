@@ -19,7 +19,6 @@ const SOURCE_LABELS = {
   league_avg:  { label: 'League Avg', cls: 'src-league' },
 };
 
-// Pitchers table columns - drives both header and sort logic
 const PITCHER_COLUMNS = [
   { key: 'last_first',         label: 'Pitcher',     align: 'left',  type: 'string' },
   { key: 'team_code',          label: 'Team',        align: 'ctr',   type: 'string' },
@@ -54,16 +53,18 @@ export default function App() {
     async function load() {
       setLoading(true);
       try {
-        const [slateRes, perfRes] = await Promise.all([
+        const [slateRes, overallRes, byDateRes] = await Promise.all([
           fetch(`${API_BASE}/api/slate/today`),
-          fetch(`${API_BASE}/api/performance/rolling`),
+          fetch(`${API_BASE}/api/performance/overall`),
+          fetch(`${API_BASE}/api/performance/by-date`),
         ]);
         if (!slateRes.ok) throw new Error(`Slate API ${slateRes.status}`);
         const slateData = await slateRes.json();
-        const perfData = perfRes.ok ? await perfRes.json() : [];
+        const overallData = overallRes.ok ? await overallRes.json() : null;
+        const byDateData = byDateRes.ok ? await byDateRes.json() : [];
         if (!cancelled) {
           setSlate(slateData);
-          setPerf(perfData);
+          setPerf({ overall: overallData, byDate: byDateData });
         }
       } catch (e) {
         if (!cancelled) setError(e.message);
@@ -241,12 +242,7 @@ function EdgeRow({ edge }) {
   );
 }
 
-// ============================================================================
-// Pitchers tab - sortable kitchen-sink projection table
-// ============================================================================
-
 function PitchersView({ projections, games }) {
-  // Default sort: by game time (asc), then last_first (asc)
   const [sortKey, setSortKey] = useState('__default');
   const [sortDir, setSortDir] = useState('asc');
 
@@ -254,16 +250,13 @@ function PitchersView({ projections, games }) {
     return <div className="empty">No pitcher projections yet for tonight's slate.</div>;
   }
 
-  // Build game-time lookup for default sort
   const gameTime = {};
   (games || []).forEach(g => { gameTime[g.game_pk] = g.game_time_et || ''; });
 
   function handleHeaderClick(colKey) {
     if (sortKey === colKey) {
-      // Toggle direction on second click
       setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
     } else {
-      // New column: numeric defaults to descending (highest first), strings ascending
       const col = PITCHER_COLUMNS.find(c => c.key === colKey);
       setSortKey(colKey);
       setSortDir(col?.type === 'number' ? 'desc' : 'asc');
@@ -283,7 +276,6 @@ function PitchersView({ projections, games }) {
   const sorted = [...projections].sort((a, b) => {
     const va = getSortValue(a, sortKey);
     const vb = getSortValue(b, sortKey);
-    // Nulls always sort last regardless of direction
     if (va == null && vb == null) return 0;
     if (va == null) return 1;
     if (vb == null) return -1;
@@ -424,31 +416,153 @@ function GameCard({ game, projs }) {
   );
 }
 
+// ============================================================================
+// Track Record - daily cards with category breakdown
+// ============================================================================
+
 function PerformanceView({ perf }) {
-  if (!perf || perf.length === 0) {
-    return <div className="empty">No performance data yet - first slate hasn't graded yet.</div>;
+  if (!perf || !perf.byDate || perf.byDate.length === 0) {
+    return <div className="empty">No graded plays yet - first slate hasn't graded.</div>;
   }
+
   return (
     <section>
       <div className="section-header">
         <h2>Track record.</h2>
-        <span className="deck">Rolling windows &middot; 7d / 14d / 30d</span>
+        <span className="deck">Cumulative & daily &middot; graded against actual outcomes</span>
       </div>
-      <div className="perf-grid">
-        {perf.map((p, i) => (
-          <div key={i} className="perf-card">
-            <div className="label">{p.window_days}-Day Window</div>
-            <div className={`value ${(p.profit_units ?? 0) >= 0 ? 'pos' : 'neg'}`}>
-              {p.wins}-{p.losses}
-            </div>
-            <div className="sub">
-              Hit rate: {((p.hit_rate ?? 0) * 100).toFixed(1)}% &middot;
-              ROI: {((p.roi ?? 0) * 100).toFixed(1)}% &middot;
-              Profit: {(p.profit_units ?? 0).toFixed(2)} units
-            </div>
-          </div>
-        ))}
+
+      {perf.overall && <OverallCard overall={perf.overall} />}
+
+      <div className="track-daily-stack">
+        {perf.byDate.map(day => <DayCard key={day.run_date} day={day} />)}
       </div>
     </section>
+  );
+}
+
+function sumCategoryGroup(group) {
+  return group.reduce(
+    (acc, c) => ({
+      wins:   acc.wins + c.wins,
+      losses: acc.losses + c.losses,
+      pushes: acc.pushes + c.pushes,
+      profit: acc.profit + c.profit_units,
+    }),
+    { wins: 0, losses: 0, pushes: 0, profit: 0 }
+  );
+}
+
+function fmtSign(n) {
+  return n >= 0 ? `+${n.toFixed(2)}` : n.toFixed(2);
+}
+
+function fmtRate(g) {
+  const d = g.wins + g.losses;
+  return d > 0 ? (g.wins / d * 100).toFixed(1) + '%' : '—';
+}
+
+function OverallCard({ overall }) {
+  const o = overall.overall;
+  const decisive = o.wins + o.losses;
+  const hitRate = decisive > 0 ? (o.wins / decisive * 100) : 0;
+  const profitClass = o.profit_units >= 0 ? 'pos' : 'neg';
+
+  const totals = (overall.by_category || []).filter(c => c.kind === 'total');
+  const props  = (overall.by_category || []).filter(c => c.kind === 'prop');
+  const totalsAgg = sumCategoryGroup(totals);
+  const propsAgg  = sumCategoryGroup(props);
+
+  return (
+    <div className="track-overall">
+      <div className="track-overall-header">
+        <div className="overall-record">
+          <div className="record-label">Cumulative record</div>
+          <div className="record-line">
+            <span className="record-wl">{o.wins}-{o.losses}{o.pushes ? `-${o.pushes}` : ''}</span>
+            <span className="record-rate">{hitRate.toFixed(1)}%</span>
+            <span className={`record-units ${profitClass}`}>{fmtSign(o.profit_units)}u</span>
+          </div>
+        </div>
+      </div>
+      <div className="track-overall-split">
+        <div className="split-tile">
+          <div className="split-label">Game Totals</div>
+          <div className="split-line">
+            <span className="split-wl">{totalsAgg.wins}-{totalsAgg.losses}</span>
+            <span className="split-rate">{fmtRate(totalsAgg)}</span>
+            <span className={`split-units ${totalsAgg.profit >= 0 ? 'pos' : 'neg'}`}>{fmtSign(totalsAgg.profit)}u</span>
+          </div>
+        </div>
+        <div className="split-tile">
+          <div className="split-label">Pitcher Props</div>
+          <div className="split-line">
+            <span className="split-wl">{propsAgg.wins}-{propsAgg.losses}</span>
+            <span className="split-rate">{fmtRate(propsAgg)}</span>
+            <span className={`split-units ${propsAgg.profit >= 0 ? 'pos' : 'neg'}`}>{fmtSign(propsAgg.profit)}u</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DayCard({ day }) {
+  const s = day.summary;
+  const decisive = s.wins + s.losses;
+  const hitRate = decisive > 0 ? (s.wins / decisive * 100) : 0;
+  const profitClass = s.profit_units >= 0 ? 'pos' : 'neg';
+
+  const dateLabel = new Date(day.run_date + 'T12:00:00').toLocaleDateString(
+    'en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }
+  );
+
+  const totals = day.by_category.filter(c => c.kind === 'total');
+  const props  = day.by_category.filter(c => c.kind === 'prop');
+  const totalsAgg = sumCategoryGroup(totals);
+  const propsAgg  = sumCategoryGroup(props);
+
+  return (
+    <div className={`day-card ${profitClass}`}>
+      <div className="day-header">
+        <div className="day-date">{dateLabel}</div>
+        <div className="day-summary">
+          <span className="day-wl">{s.wins}-{s.losses}{s.pushes ? `-${s.pushes}` : ''}</span>
+          <span className="day-rate">{hitRate.toFixed(1)}%</span>
+          <span className={`day-units ${profitClass}`}>{fmtSign(s.profit_units)}u</span>
+        </div>
+      </div>
+
+      {totals.length > 0 && (
+        <div className="day-section">
+          <div className="day-section-header">
+            <span className="section-name">Game Totals</span>
+            <span className="section-stats">
+              {totalsAgg.wins}-{totalsAgg.losses}{totalsAgg.pushes ? `-${totalsAgg.pushes}` : ''} &middot; {fmtRate(totalsAgg)} &middot; <span className={totalsAgg.profit >= 0 ? 'pos' : 'neg'}>{fmtSign(totalsAgg.profit)}u</span>
+            </span>
+          </div>
+        </div>
+      )}
+
+      {props.length > 0 && (
+        <div className="day-section">
+          <div className="day-section-header">
+            <span className="section-name">Pitcher Props</span>
+            <span className="section-stats">
+              {propsAgg.wins}-{propsAgg.losses}{propsAgg.pushes ? `-${propsAgg.pushes}` : ''} &middot; {fmtRate(propsAgg)} &middot; <span className={propsAgg.profit >= 0 ? 'pos' : 'neg'}>{fmtSign(propsAgg.profit)}u</span>
+            </span>
+          </div>
+          <div className="day-prop-grid">
+            {props.map(c => (
+              <div key={c.category} className="prop-tile">
+                <div className="prop-cat">{MARKET_LABELS[c.category]?.replace('Pitcher ', '') ?? c.category}</div>
+                <div className="prop-wl">{c.wins}-{c.losses}{c.pushes ? `-${c.pushes}` : ''}</div>
+                <div className={`prop-units ${c.profit_units >= 0 ? 'pos' : 'neg'}`}>{fmtSign(c.profit_units)}u</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
