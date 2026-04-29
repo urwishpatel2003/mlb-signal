@@ -139,6 +139,31 @@ def get_run_edges(run_id: int, flagged_only: bool = True):
     return [dict(e) for e in db.fetchall(sql, (run_id,))]
 
 
+@app.get("/api/admin/wipe-runs/{token}")
+def wipe_runs(token: str):
+    if token != os.environ.get("ADMIN_TOKEN"):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    # Wipe edges for runs 25, 26, 27 (post-firstpitch projections with bad data)
+    n_edges_before = db.fetchone("SELECT COUNT(*) AS c FROM edges WHERE run_id IN (25,26,27)")["c"]
+    n_results_deleted = 0
+    db.execute("""
+        DELETE FROM edge_results
+        WHERE edge_id IN (SELECT edge_id FROM edges WHERE run_id IN (25,26,27))
+    """)
+    db.execute("DELETE FROM edges WHERE run_id IN (25,26,27)")
+    db.execute("DELETE FROM game_projections WHERE run_id IN (25,26,27)")
+    db.execute("DELETE FROM pitcher_projections WHERE run_id IN (25,26,27)")
+    db.execute("DELETE FROM projection_runs WHERE run_id IN (25,26,27)")
+    db.execute("DELETE FROM model_performance")
+    n_edges_after = db.fetchone("SELECT COUNT(*) AS c FROM edges WHERE run_id IN (25,26,27)")["c"]
+    return {
+        "edges_before": n_edges_before,
+        "edges_after": n_edges_after,
+        "deleted": n_edges_before - n_edges_after,
+        "note": "Wiped runs 25-27. model_performance also reset.",
+    }
+
+
 @app.get("/api/admin/dedupe-grades/{token}")
 def dedupe_grades(token: str):
     if token != os.environ.get("ADMIN_TOKEN"):
