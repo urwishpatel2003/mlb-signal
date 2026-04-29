@@ -263,7 +263,7 @@ def run(trigger: str = "manual") -> dict:
         run_date = date.today().isoformat()
         log.info("Fetching schedule for %s", run_date)
         games = mlb_api.get_schedule()
-        active = [g for g in games if g.status not in ("Postponed", "Cancelled")]
+        active = [g for g in games if g.status in ("Scheduled", "Pre-Game", "Warmup", "Delayed Start")]
         metrics["n_games"] = len(active)
         log.info("%d active games (of %d total)", len(active), len(games))
 
