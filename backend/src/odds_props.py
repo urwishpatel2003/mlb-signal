@@ -65,7 +65,7 @@ def _normalize_name(s: str) -> str:
         return ""
     if "," in s:
         last, _, first = s.partition(",")
-        s = f"{last.strip()} {first.strip()}"
+        s = f"{first.strip()} {last.strip()}"
     s = re.sub(r"[^a-zA-Z\s]", "", s).strip().lower()
     s = re.sub(r"\s+", " ", s)
     for suffix in (" jr", " sr", " ii", " iii", " iv"):
