@@ -510,7 +510,7 @@ def scheduler_status(token: str):
             jobs.append({
                 "id": j.id,
                 "name": j.name,
-                "next_run_time": str(j.next_run_time) if j.next_run_time else None,
+                "next_run_time": str(j.trigger.get_next_fire_time(None, datetime.now(timezone.utc))),
             })
         return {"ok": True, "jobs": jobs}
     except Exception as e:
