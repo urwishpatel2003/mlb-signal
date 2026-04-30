@@ -173,13 +173,13 @@ def grade_yesterday(target_date: Optional[date] = None) -> dict:
         # Now grade every edge from yesterday's runs
         edges = db.fetchall(
             """
-            SELECT DISTINCT ON (e.game_pk, e.kind, e.category, COALESCE(e.pitcher_mlb_id, 0), e.lean)
+            SELECT DISTINCT ON (e.game_pk, e.kind, e.category, COALESCE(e.pitcher_mlb_id, 0))
                    e.*, g.away_score, g.home_score, g.status
             FROM edges e
             JOIN games g ON g.game_pk = e.game_pk
             JOIN projection_runs pr ON pr.run_id = e.run_id
             WHERE pr.run_date = %s AND e.flagged = TRUE
-            ORDER BY e.game_pk, e.kind, e.category, COALESCE(e.pitcher_mlb_id, 0), e.lean,
+            ORDER BY e.game_pk, e.kind, e.category, COALESCE(e.pitcher_mlb_id, 0),
                      e.edge_id DESC
             """,
             (target,),
