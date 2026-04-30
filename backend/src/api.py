@@ -436,3 +436,82 @@ def performance_overall():
         })
 
     return {"overall": overall, "by_category": by_category}
+# ============================================================================
+# Manual trigger endpoints
+# Hit these from your phone / browser to manually fire any scheduled job.
+# Auth: token in URL path. Same ADMIN_TOKEN env var as other admin routes.
+# ============================================================================
+
+@app.get("/api/admin/trigger/statcast/{token}")
+def trigger_statcast(token: str):
+    if token != os.environ.get("ADMIN_TOKEN"):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    from . import statcast_refresh
+    try:
+        result = statcast_refresh.refresh_statcast()
+        return {"job": "statcast_refresh", "ok": True, "result": result}
+    except Exception as e:
+        return {"job": "statcast_refresh", "ok": False, "error": str(e)}
+
+
+@app.get("/api/admin/trigger/orchestrator/{token}")
+def trigger_orchestrator(token: str, mode: str = "manual"):
+    """
+    mode = "manual" | "morning" | "line_watcher"
+    Default "manual" if not specified. Pass via ?mode=morning for morning.
+    """
+    if token != os.environ.get("ADMIN_TOKEN"):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    from . import orchestrator
+    try:
+        result = orchestrator.run(trigger=mode)
+        return {"job": f"orchestrator:{mode}", "ok": True, "result": result}
+    except Exception as e:
+        return {"job": f"orchestrator:{mode}", "ok": False, "error": str(e)}
+
+
+@app.get("/api/admin/trigger/grader/{token}")
+def trigger_grader(token: str, date: Optional[str] = None):
+    """
+    date = "YYYY-MM-DD" optional. If omitted, grades yesterday.
+    """
+    if token != os.environ.get("ADMIN_TOKEN"):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    from . import grader
+    from datetime import date as date_cls
+    target = None
+    if date:
+        try:
+            target = date_cls.fromisoformat(date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
+    try:
+        result = grader.grade_yesterday(target_date=target)
+        return {"job": "grader", "ok": True, "result": result}
+    except Exception as e:
+        return {"job": "grader", "ok": False, "error": str(e)}
+
+
+@app.get("/api/admin/scheduler-status/{token}")
+def scheduler_status(token: str):
+    """
+    Quick info: was the worker service started, and what jobs are registered?
+    Note: this runs in the API process, NOT the worker. It just confirms
+    the scheduler module is importable. To check actual scheduler health,
+    look at the worker service logs in Railway.
+    """
+    if token != os.environ.get("ADMIN_TOKEN"):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        from . import scheduler
+        sched = scheduler.build_scheduler()
+        jobs = []
+        for j in sched.get_jobs():
+            jobs.append({
+                "id": j.id,
+                "name": j.name,
+                "next_run_time": str(j.next_run_time) if j.next_run_time else None,
+            })
+        return {"ok": True, "jobs": jobs}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
