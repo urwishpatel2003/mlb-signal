@@ -32,6 +32,38 @@ from apscheduler.triggers.cron import CronTrigger
 
 from . import grader, orchestrator, statcast_refresh
 
+# Tiny HTTP server in a background thread so Railway's healthcheck passes.
+# The scheduler is the actual workload - this is just to keep Railway happy.
+import os
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path in ("/api/health", "/health", "/"):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"status":"ok","service":"scheduler"}')
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, format, *args):
+        # Quiet the default access logging
+        return
+
+
+def _run_health_server():
+    port = int(os.environ.get("PORT", 8000))
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    server.serve_forever()
+
+
+# Boot the health server in a daemon thread
+threading.Thread(target=_run_health_server, daemon=True).start()
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
