@@ -113,6 +113,25 @@ def _df_to_hitter_rows(df, season_year: int) -> list[dict]:
 
 # ---------- MLB Stats API: pitch-budget data ----------
 
+def _fetch_pitcher_game_log(mlb_id: int, season_year: int) -> list[dict]:
+    """
+    Fetch game-by-game pitching log for a pitcher in this season.
+    Returns list of stat dicts (one per appearance).
+    Caller should filter to gamesStarted == 1 to get start-only data.
+    """
+    url = f"{MLB_API_BASE}/people/{mlb_id}/stats"
+    params = {"stats": "gameLog", "group": "pitching", "season": season_year}
+    try:
+        r = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
+        r.raise_for_status()
+        data = r.json()
+        splits = data.get("stats", [{}])[0].get("splits", [])
+        return [s.get("stat", {}) for s in splits if s.get("stat")]
+    except Exception as e:
+        log.debug("Pitcher %d gameLog fetch failed: %s", mlb_id, e)
+        return []
+
+
 def _fetch_pitcher_season_stats(mlb_id: int, season_year: int) -> Optional[dict]:
     """
     Hit MLB Stats API for one pitcher's season totals. Returns None if no data.
@@ -165,34 +184,45 @@ def _refresh_pitcher_budget(season_year: int) -> int:
     success = 0
     for i, row in enumerate(rows):
         mlb_id = row["mlb_id"]
-        stats = _fetch_pitcher_season_stats(mlb_id, season_year)
-        if not stats:
+
+        # Pull game-by-game log; filter to STARTS ONLY (gamesStarted == 1).
+        # This eliminates role-mixing for pitchers who have both starts + relief.
+        games = _fetch_pitcher_game_log(mlb_id, season_year)
+        if not games:
             continue
 
-        g = _coerce_int(stats.get("gamesPlayed")) or 0
-        gs = _coerce_int(stats.get("gamesStarted")) or 0
-        tbf = _coerce_int(stats.get("battersFaced")) or 0
-        pitches = _coerce_int(stats.get("numberOfPitches")) or 0
-        ip = _parse_ip(stats.get("inningsPitched"))
-        so = _coerce_int(stats.get("strikeOuts")) or 0
-        bb = _coerce_int(stats.get("baseOnBalls")) or 0
-
-        # Need both gs > 0 (started a game) AND tbf > 0 to compute meaningful budget
-        if gs == 0 or tbf == 0 or pitches == 0:
+        starts = [g for g in games if (_coerce_int(g.get("gamesStarted")) or 0) >= 1]
+        if not starts:
+            # Pitcher has appearances but no starts - skip entirely
             continue
+
+        gs = len(starts)
+        # Aggregate across starts only
+        tbf_sum = sum(_coerce_int(g.get("battersFaced")) or 0 for g in starts)
+        pitches_sum = sum(_coerce_int(g.get("numberOfPitches")) or 0 for g in starts)
+        ip_sum = sum((_parse_ip(g.get("inningsPitched")) or 0) for g in starts)
+        so_sum = sum(_coerce_int(g.get("strikeOuts")) or 0 for g in starts)
+        bb_sum = sum(_coerce_int(g.get("baseOnBalls")) or 0 for g in starts)
+
+        # Need meaningful workload data
+        if tbf_sum == 0 or pitches_sum == 0:
+            continue
+
+        # Total games (starts + relief) for the g_total column
+        g_total = len(games)
 
         update_rows.append({
             "mlb_id": mlb_id,
             "season_year": season_year,
-            "g_total": g,
+            "g_total": g_total,
             "gs": gs,
-            "ip_total": ip,
-            "tbf": tbf,
-            "pitches_total": pitches,
-            "avg_pitches_per_start": pitches / gs if gs > 0 else None,
-            "pitches_per_pa": pitches / tbf if tbf > 0 else None,
-            "k_pct": so / tbf if tbf > 0 else None,
-            "bb_pct": bb / tbf if tbf > 0 else None,
+            "ip_total": ip_sum,
+            "tbf": tbf_sum,
+            "pitches_total": pitches_sum,
+            "avg_pitches_per_start": pitches_sum / gs,
+            "pitches_per_pa": pitches_sum / tbf_sum,
+            "k_pct": so_sum / tbf_sum,
+            "bb_pct": bb_sum / tbf_sum,
         })
         success += 1
 
