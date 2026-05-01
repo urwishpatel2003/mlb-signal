@@ -311,6 +311,15 @@ def run(trigger: str = "manual") -> dict:
         for g in active:
             if not g.away_pitcher or not g.home_pitcher:
                 log.warning("Skipping %s - missing probable pitcher", g.game_pk)
+                metrics["skipped_no_pitcher"] = metrics.get("skipped_no_pitcher", 0) + 1
+                continue
+
+            n_away = len(g.away_lineup or [])
+            n_home = len(g.home_lineup or [])
+            if n_away < 9 or n_home < 9:
+                log.info("Skipping %s - lineups not confirmed (away=%d, home=%d)",
+                         g.game_pk, n_away, n_home)
+                metrics["skipped_no_lineup"] = metrics.get("skipped_no_lineup", 0) + 1
                 continue
 
             park = all_parks.get(get_park_for_team(g.home_team)) or {}
