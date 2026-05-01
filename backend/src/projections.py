@@ -168,6 +168,53 @@ def wind_run_factor(mph: Optional[float],
     return 1.0 + (mph * out / 5) * 0.023 - (mph * cross / 5) * 0.009
 
 
+def _project_ip_pitch_budget(
+    avg_pitches_per_start,
+    pitcher_pitches_per_pa,
+    lineup_pitches_per_pa,
+    fallback_ip,
+):
+    """
+    Estimate IP from pitcher's pitch budget and the opposing lineup's patience.
+
+    Logic:
+      - Effective pitches/PA = avg of pitcher's rate and lineup's rate
+      - Projected PAs faced = pitcher's budget / effective rate
+      - Out rate per PA ~= 0.71 (1 - league OBP)
+      - IP = projected_outs / 3
+      - Clamped to [3.0, 8.5] to avoid pathological projections
+    """
+    if not avg_pitches_per_start or not pitcher_pitches_per_pa:
+        return fallback_ip
+    if not lineup_pitches_per_pa or lineup_pitches_per_pa <= 0:
+        lineup_pitches_per_pa = 3.92
+    effective_pitches_per_pa = (pitcher_pitches_per_pa + lineup_pitches_per_pa) / 2.0
+    if effective_pitches_per_pa <= 0:
+        return fallback_ip
+    projected_pa = avg_pitches_per_start / effective_pitches_per_pa
+    out_rate_per_pa = 0.71
+    projected_outs = projected_pa * out_rate_per_pa
+    projected_ip = projected_outs / 3.0
+    return max(3.0, min(8.5, projected_ip))
+
+
+def _lineup_pitches_per_pa(opp_lineup, hitter_xstats):
+    """Average pitches/PA across the confirmed lineup; 3.92 league fallback if <4 data points."""
+    if not opp_lineup:
+        return 3.92
+    rates = []
+    for spot in opp_lineup:
+        h = hitter_xstats.get(spot.mlb_id)
+        if h and h.get("pitches_per_pa"):
+            try:
+                rates.append(float(h["pitches_per_pa"]))
+            except (TypeError, ValueError):
+                pass
+    if len(rates) < 4:
+        return 3.92
+    return sum(rates) / len(rates)
+
+
 def project_pitcher(
     *,
     pitcher_xstats: Optional[dict],     # row from pitcher_xstats; None for rookies
@@ -243,13 +290,17 @@ def project_pitcher(
         else:
             bb9 = LEAGUE_BB9
         source = "statcast"
-        # Leash by quality
+        # Leash by quality (fallback when pitch-budget data unavailable)
         if true_era > 5.5:
-            ip = 4.5
+            fallback_ip = 4.5
         elif true_era < 3.0:
-            ip = 6.0
+            fallback_ip = 6.0
         else:
-            ip = 5.5
+            fallback_ip = 5.5
+        avg_pps = pitcher_xstats.get("avg_pitches_per_start") if pitcher_xstats else None
+        pit_ppa = pitcher_xstats.get("pitches_per_pa") if pitcher_xstats else None
+        lineup_ppa = _lineup_pitches_per_pa(opp_lineup, hitter_xstats)
+        ip = _project_ip_pitch_budget(avg_pps, pit_ppa, lineup_ppa, fallback_ip)
 
     # ---- Apply weather + park ----
     cf_az = float(park.get("cf_azimuth_deg") or 0)
