@@ -174,6 +174,13 @@ def _project_ip_pitch_budget(
     lineup_pitches_per_pa,
     fallback_ip,
 ):
+    # Cast Decimal-from-DB inputs to float for arithmetic
+    if avg_pitches_per_start is not None:
+        avg_pitches_per_start = float(avg_pitches_per_start)
+    if pitcher_pitches_per_pa is not None:
+        pitcher_pitches_per_pa = float(pitcher_pitches_per_pa)
+    if lineup_pitches_per_pa is not None:
+        lineup_pitches_per_pa = float(lineup_pitches_per_pa)
     """
     Estimate IP from pitcher's pitch budget and the opposing lineup's patience.
 
