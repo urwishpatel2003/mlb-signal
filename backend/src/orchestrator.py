@@ -141,12 +141,15 @@ def estimate_book_lines(p: projections.PitcherProjection,
 def compute_edges_for_game(*, game_pk: int, game: dict,
                             away_proj: projections.PitcherProjection,
                             home_proj: projections.PitcherProjection,
-                            market_total: Optional[float]) -> list[dict]:
+                            market_total: Optional[float],
+                            away_team_xstats: Optional[dict] = None,
+                            home_team_xstats: Optional[dict] = None) -> list[dict]:
     edges: list[dict] = []
 
     # ---- Game total ----
     full_total, f5_total = projections.project_game_total(
-        away_proj=away_proj, home_proj=home_proj
+        away_proj=away_proj, home_proj=home_proj,
+        away_team_xstats=away_team_xstats, home_team_xstats=home_team_xstats
     )
     if market_total is not None:
         diff = full_total - market_total
@@ -377,7 +380,9 @@ def run(trigger: str = "manual") -> dict:
 
             # Game total + edges
             full_total, f5_total = projections.project_game_total(
-                away_proj=away_proj, home_proj=home_proj
+                away_proj=away_proj, home_proj=home_proj,
+                away_team_xstats=all_team.get(g.away_team),
+                home_team_xstats=all_team.get(g.home_team)
             )
             market_total = float(game_row.get("market_total")) if game_row.get("market_total") else None
             edge_total = (full_total - market_total) if market_total else None
@@ -402,6 +407,8 @@ def run(trigger: str = "manual") -> dict:
                 game_pk=g.game_pk, game=asdict(g),
                 away_proj=away_proj, home_proj=home_proj,
                 market_total=market_total,
+                away_team_xstats=all_team.get(g.away_team),
+                home_team_xstats=all_team.get(g.home_team),
             )
             for e in game_edges:
                 # Tier needs the projection that drove the edge

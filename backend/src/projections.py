@@ -356,20 +356,45 @@ def project_pitcher(
     )
 
 
+def _compute_team_bullpen_er9(team_xstats_row, league_avg_er9=4.0):
+    """
+    Compute ER/9 for a team's bullpen, blending team data with league avg.
+    Soft Bayesian: weight = bp_ip / (bp_ip + 50). Smoother than hard threshold.
+    """
+    if not team_xstats_row:
+        return league_avg_er9
+    bp_ip = float(team_xstats_row.get("bullpen_ip") or 0)
+    bp_era_raw = team_xstats_row.get("bullpen_era")
+    if not bp_era_raw or bp_ip <= 0:
+        return league_avg_er9
+    bp_era = float(bp_era_raw)
+    bp_xera_raw = team_xstats_row.get("bullpen_xera")
+    if bp_xera_raw:
+        team_true_era = 0.7 * float(bp_xera_raw) + 0.3 * bp_era
+    else:
+        team_true_era = bp_era
+    weight = bp_ip / (bp_ip + 50.0)
+    return weight * team_true_era + (1 - weight) * league_avg_er9
+
+
 def project_game_total(
     *,
     away_proj: PitcherProjection,
     home_proj: PitcherProjection,
-    bullpen_er9: float = 4.0,
+    away_team_xstats: Optional[dict] = None,
+    home_team_xstats: Optional[dict] = None,
+    league_bullpen_er9: float = 4.0,
 ) -> tuple[float, float]:
     """
     Combine starter projections into full game and F5 totals.
+    Uses per-team bullpen ER/9 when team_xstats data is available.
 
     Returns (full_game_total, f5_total).
     """
     starter_runs = away_proj.er + home_proj.er
-    bullpen_innings_remaining = (9 - away_proj.ip) + (9 - home_proj.ip)
-    bullpen_runs = bullpen_innings_remaining * (bullpen_er9 / 9)
+    away_bp_er9 = _compute_team_bullpen_er9(away_team_xstats, league_bullpen_er9)
+    home_bp_er9 = _compute_team_bullpen_er9(home_team_xstats, league_bullpen_er9)
+    bullpen_runs = (9 - away_proj.ip) * (away_bp_er9 / 9) + (9 - home_proj.ip) * (home_bp_er9 / 9)
     full_total = starter_runs + bullpen_runs
 
     # F5: just the starter contribution scaled to 5 IP each
