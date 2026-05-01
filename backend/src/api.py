@@ -492,6 +492,35 @@ def trigger_grader(token: str, date: Optional[str] = None):
         return {"job": "grader", "ok": False, "error": str(e)}
 
 
+@app.get("/api/admin/wipe-prop-history/{token}")
+def wipe_prop_history(token: str):
+    """
+    Wipe ALL pitcher prop edges + their grades + model_performance.
+    Game total edges and their grades remain untouched.
+    Use this to reset prop track record after a model change.
+    """
+    if token != os.environ.get("ADMIN_TOKEN"):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        # Delete graded results for prop edges
+        n_results = db.execute("""
+            DELETE FROM edge_results
+            WHERE edge_id IN (SELECT edge_id FROM edges WHERE kind = 'prop')
+        """)
+        # Delete the prop edges themselves
+        n_edges = db.execute("DELETE FROM edges WHERE kind = 'prop'")
+        # Reset model_performance (grader will recompute next run)
+        n_perf = db.execute("DELETE FROM model_performance")
+        return {
+            "ok": True,
+            "edge_results_deleted": n_results,
+            "prop_edges_deleted": n_edges,
+            "model_performance_deleted": n_perf
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 @app.get("/api/admin/scheduler-status/{token}")
 def scheduler_status(token: str):
     """
