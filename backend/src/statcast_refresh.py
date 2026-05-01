@@ -2,28 +2,33 @@
 Daily Statcast refresh.
 
 Cron entry point. Runs once per day (06:00 ET, before first orchestrator run)
-to pull the latest Expected Stats from Baseball Savant via pybaseball.
+to pull the latest Expected Stats from Baseball Savant via pybaseball, plus
+per-pitcher and per-hitter season aggregates from MLB Stats API for the
+pitch-budget IP projection model.
 
 Persists to:
-  - pitcher_xstats  (now includes pitch-budget fields: TBF, pitches, GS, etc.)
-  - hitter_xstats   (now includes pitches_per_pa for lineup-aware projection)
+  - pitcher_xstats  (xStats from Savant + workload from MLB API)
+  - hitter_xstats   (xStats from Savant + patience from MLB API)
   - team_xstats
 
-In addition to Statcast Expected Stats, this also pulls FanGraphs season aggregates
-(via pybaseball.pitching_stats / batting_stats) so we have:
-  - Pitcher's avg pitches per start
-  - Pitcher's pitches per PA
-  - Hitter's pitches per PA
-These drive the new pitch-budget IP projection model.
+We use MLB Stats API instead of FanGraphs because Cloudflare blocks Railway IPs
+from FanGraphs. MLB Stats API is the official endpoint, free, no auth, and
+serves the same underlying numbers we need.
 """
 from __future__ import annotations
 import logging
+import time
 from datetime import date
 from typing import Optional
+
+import requests
 
 from . import db, ntfy
 
 log = logging.getLogger(__name__)
+
+MLB_API_BASE = "https://statsapi.mlb.com/api/v1"
+REQUEST_TIMEOUT = 10  # per-request timeout in seconds
 
 
 # ---------- Coercion helpers ----------
@@ -40,18 +45,32 @@ def _coerce_float(x) -> Optional[float]:
         if x is None:
             return None
         f = float(x)
-        # pybaseball sometimes returns nan
-        if f != f:  # nan check
+        if f != f:  # nan
             return None
         return f
     except (TypeError, ValueError):
         return None
 
 
-# ---------- Statcast Expected Stats normalization ----------
+def _parse_ip(ip_str) -> Optional[float]:
+    """MLB API returns IP as string like '33.1' meaning 33 and 1/3 innings."""
+    if ip_str is None:
+        return None
+    try:
+        s = str(ip_str)
+        if "." in s:
+            whole, frac = s.split(".")
+            whole = int(whole)
+            frac = int(frac)  # 0, 1, or 2
+            return whole + frac / 3.0
+        return float(s)
+    except (TypeError, ValueError):
+        return None
+
+
+# ---------- Statcast Expected Stats normalization (existing) ----------
 
 def _df_to_pitcher_rows(df, season_year: int) -> list[dict]:
-    """Normalize a pybaseball Expected Stats DataFrame into our schema rows."""
     rows = []
     name_col = "last_name, first_name" if "last_name, first_name" in df.columns else "name"
     for _, r in df.iterrows():
@@ -92,100 +111,97 @@ def _df_to_hitter_rows(df, season_year: int) -> list[dict]:
     return [r for r in rows if r["mlb_id"]]
 
 
-# ---------- FanGraphs aggregates -> pitch-budget fields ----------
+# ---------- MLB Stats API: pitch-budget data ----------
 
-def _df_to_pitcher_budget_rows(df, season_year: int) -> list[dict]:
+def _fetch_pitcher_season_stats(mlb_id: int, season_year: int) -> Optional[dict]:
     """
-    From pybaseball.pitching_stats(season), extract per-pitcher aggregates needed
-    for the pitch-budget IP model. Returns rows keyed by (mlbam_id, season_year).
-    Names from FanGraphs use 'IDfg' but mlbam_id is in 'xMLBAMID'.
+    Hit MLB Stats API for one pitcher's season totals. Returns None if no data.
     """
-    rows = []
-    if df is None or len(df) == 0:
-        return rows
-
-    # Detect column names defensively - FanGraphs has occasional renames
-    id_col = "xMLBAMID" if "xMLBAMID" in df.columns else "MLBAMID" if "MLBAMID" in df.columns else None
-    if id_col is None:
-        log.warning("FanGraphs pitching_stats has no MLBAM id column; skipping budget fields")
-        return rows
-
-    for _, r in df.iterrows():
-        mlb_id = _coerce_int(r.get(id_col))
-        if not mlb_id:
-            continue
-        gs = _coerce_int(r.get("GS")) or 0
-        tbf = _coerce_int(r.get("TBF")) or 0
-        pitches = _coerce_int(r.get("Pitches")) or 0
-        ip = _coerce_float(r.get("IP")) or 0.0
-        # Strikeouts / Walks - FG sometimes uses 'SO', sometimes 'K'
-        so = _coerce_int(r.get("SO")) or _coerce_int(r.get("K")) or 0
-        bb = _coerce_int(r.get("BB")) or 0
-
-        avg_pitches_per_start = (pitches / gs) if gs > 0 else None
-        pitches_per_pa = (pitches / tbf) if tbf > 0 else None
-        k_pct = (so / tbf) if tbf > 0 else None
-        bb_pct = (bb / tbf) if tbf > 0 else None
-
-        rows.append({
-            "mlb_id": mlb_id,
-            "season_year": season_year,
-            "gs": gs or None,
-            "ip_total": ip or None,
-            "tbf": tbf or None,
-            "pitches_total": pitches or None,
-            "avg_pitches_per_start": _coerce_float(avg_pitches_per_start),
-            "pitches_per_pa": _coerce_float(pitches_per_pa),
-            "k_pct": _coerce_float(k_pct),
-            "bb_pct": _coerce_float(bb_pct),
-        })
-    return rows
+    url = f"{MLB_API_BASE}/people/{mlb_id}/stats"
+    params = {"stats": "season", "group": "pitching", "season": season_year}
+    try:
+        r = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
+        r.raise_for_status()
+        data = r.json()
+        splits = data.get("stats", [{}])[0].get("splits", [])
+        if not splits:
+            return None
+        return splits[0].get("stat", {})
+    except Exception as e:
+        log.debug("Pitcher %d stats fetch failed: %s", mlb_id, e)
+        return None
 
 
-def _df_to_hitter_budget_rows(df, season_year: int) -> list[dict]:
+def _fetch_hitter_season_stats(mlb_id: int, season_year: int) -> Optional[dict]:
+    """Same as above but for hitters."""
+    url = f"{MLB_API_BASE}/people/{mlb_id}/stats"
+    params = {"stats": "season", "group": "hitting", "season": season_year}
+    try:
+        r = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
+        r.raise_for_status()
+        data = r.json()
+        splits = data.get("stats", [{}])[0].get("splits", [])
+        if not splits:
+            return None
+        return splits[0].get("stat", {})
+    except Exception as e:
+        log.debug("Hitter %d stats fetch failed: %s", mlb_id, e)
+        return None
+
+
+def _refresh_pitcher_budget(season_year: int) -> int:
     """
-    From pybaseball.batting_stats(season), extract per-hitter aggregates needed
-    for the pitch-budget IP model.
+    For every pitcher in pitcher_xstats, fetch their MLB API season stats,
+    compute pitch-budget fields, UPDATE the row.
     """
-    rows = []
-    if df is None or len(df) == 0:
-        return rows
-
-    id_col = "xMLBAMID" if "xMLBAMID" in df.columns else "MLBAMID" if "MLBAMID" in df.columns else None
-    if id_col is None:
-        log.warning("FanGraphs batting_stats has no MLBAM id column; skipping budget fields")
-        return rows
-
-    for _, r in df.iterrows():
-        mlb_id = _coerce_int(r.get(id_col))
-        if not mlb_id:
-            continue
-        pa = _coerce_int(r.get("PA")) or 0
-        pitches = _coerce_int(r.get("Pitches")) or 0
-        so = _coerce_int(r.get("SO")) or _coerce_int(r.get("K")) or 0
-        bb = _coerce_int(r.get("BB")) or 0
-
-        pitches_per_pa = (pitches / pa) if pa > 0 else None
-        k_pct = (so / pa) if pa > 0 else None
-        bb_pct = (bb / pa) if pa > 0 else None
-
-        rows.append({
-            "mlb_id": mlb_id,
-            "season_year": season_year,
-            "pitches_total": pitches or None,
-            "pitches_per_pa": _coerce_float(pitches_per_pa),
-            "k_pct": _coerce_float(k_pct),
-            "bb_pct": _coerce_float(bb_pct),
-        })
-    return rows
-
-
-# ---------- Persistence helpers for the budget fields ----------
-
-def _upsert_pitcher_budget(rows: list[dict]) -> int:
-    """Update only the pitch-budget columns; doesn't touch xStats columns."""
+    # Get all pitcher IDs we know about
+    rows = db.fetchall("SELECT mlb_id FROM pitcher_xstats WHERE season_year = %s", (season_year,))
     if not rows:
         return 0
+
+    log.info("Fetching pitch-budget for %d pitchers (sequential, ~5-10 min)", len(rows))
+
+    update_rows = []
+    success = 0
+    for i, row in enumerate(rows):
+        mlb_id = row["mlb_id"]
+        stats = _fetch_pitcher_season_stats(mlb_id, season_year)
+        if not stats:
+            continue
+
+        gs = _coerce_int(stats.get("gamesStarted")) or 0
+        tbf = _coerce_int(stats.get("battersFaced")) or 0
+        pitches = _coerce_int(stats.get("numberOfPitches")) or 0
+        ip = _parse_ip(stats.get("inningsPitched"))
+        so = _coerce_int(stats.get("strikeOuts")) or 0
+        bb = _coerce_int(stats.get("baseOnBalls")) or 0
+
+        # Need both gs > 0 (started a game) AND tbf > 0 to compute meaningful budget
+        if gs == 0 or tbf == 0 or pitches == 0:
+            continue
+
+        update_rows.append({
+            "mlb_id": mlb_id,
+            "season_year": season_year,
+            "gs": gs,
+            "ip_total": ip,
+            "tbf": tbf,
+            "pitches_total": pitches,
+            "avg_pitches_per_start": pitches / gs if gs > 0 else None,
+            "pitches_per_pa": pitches / tbf if tbf > 0 else None,
+            "k_pct": so / tbf if tbf > 0 else None,
+            "bb_pct": bb / tbf if tbf > 0 else None,
+        })
+        success += 1
+
+        # Progress log every 50 pitchers
+        if (i + 1) % 50 == 0:
+            log.info("  ... %d/%d processed (%d with data)", i + 1, len(rows), success)
+
+    if not update_rows:
+        log.warning("No pitcher budget rows could be computed")
+        return 0
+
     sql = """
         UPDATE pitcher_xstats SET
           gs = %(gs)s,
@@ -199,14 +215,50 @@ def _upsert_pitcher_budget(rows: list[dict]) -> int:
           refreshed_at = now()
         WHERE mlb_id = %(mlb_id)s AND season_year = %(season_year)s;
     """
-    # We use UPDATE only, not INSERT - the row should exist from the xStats pull
-    # which runs first.
-    return db.execute_many(sql, rows)
+    return db.execute_many(sql, update_rows)
 
 
-def _upsert_hitter_budget(rows: list[dict]) -> int:
+def _refresh_hitter_budget(season_year: int) -> int:
+    """For every hitter in hitter_xstats, pull season stats, compute patience."""
+    rows = db.fetchall("SELECT mlb_id FROM hitter_xstats WHERE season_year = %s", (season_year,))
     if not rows:
         return 0
+
+    log.info("Fetching pitch-budget for %d hitters (sequential, ~5-10 min)", len(rows))
+
+    update_rows = []
+    success = 0
+    for i, row in enumerate(rows):
+        mlb_id = row["mlb_id"]
+        stats = _fetch_hitter_season_stats(mlb_id, season_year)
+        if not stats:
+            continue
+
+        pa = _coerce_int(stats.get("plateAppearances")) or 0
+        pitches = _coerce_int(stats.get("numberOfPitches")) or 0
+        so = _coerce_int(stats.get("strikeOuts")) or 0
+        bb = _coerce_int(stats.get("baseOnBalls")) or 0
+
+        if pa == 0 or pitches == 0:
+            continue
+
+        update_rows.append({
+            "mlb_id": mlb_id,
+            "season_year": season_year,
+            "pitches_total": pitches,
+            "pitches_per_pa": pitches / pa if pa > 0 else None,
+            "k_pct": so / pa if pa > 0 else None,
+            "bb_pct": bb / pa if pa > 0 else None,
+        })
+        success += 1
+
+        if (i + 1) % 50 == 0:
+            log.info("  ... %d/%d processed (%d with data)", i + 1, len(rows), success)
+
+    if not update_rows:
+        log.warning("No hitter budget rows could be computed")
+        return 0
+
     sql = """
         UPDATE hitter_xstats SET
           pitches_total = %(pitches_total)s,
@@ -216,25 +268,7 @@ def _upsert_hitter_budget(rows: list[dict]) -> int:
           refreshed_at = now()
         WHERE mlb_id = %(mlb_id)s AND season_year = %(season_year)s;
     """
-    return db.execute_many(sql, rows)
-
-
-def _refresh_team_pitches_per_pa(season_year: int) -> int:
-    """Aggregate hitter pitches_per_pa weighted by PA into team_xstats."""
-    sql = """
-        UPDATE team_xstats t SET
-          pitches_per_pa = sub.team_pitches_per_pa,
-          refreshed_at = now()
-        FROM (
-          SELECT
-            -- We don't have team association on hitter_xstats directly,
-            -- so we rely on team aggregates already loaded via team CSV.
-            -- For now use league-average as a placeholder.
-            3.92 AS team_pitches_per_pa
-        ) sub
-        WHERE t.season_year = %s;
-    """
-    return db.execute(sql, (season_year,))
+    return db.execute_many(sql, update_rows)
 
 
 # ---------- Top-level refresh ----------
@@ -249,8 +283,6 @@ def refresh_statcast(season_year: Optional[int] = None) -> dict:
         from pybaseball import (
             statcast_pitcher_expected_stats,
             statcast_batter_expected_stats,
-            pitching_stats,
-            batting_stats,
         )
     except ImportError as e:
         msg = "pybaseball not installed: pip install pybaseball"
@@ -259,7 +291,7 @@ def refresh_statcast(season_year: Optional[int] = None) -> dict:
         raise
 
     try:
-        # ---------- 1. Statcast xStats (existing) ----------
+        # ---------- 1. Statcast xStats (Baseball Savant) ----------
         log.info("Pulling pitcher xStats for %d", season_year)
         df_pit = statcast_pitcher_expected_stats(season_year, minPA=10)
         pit_rows = _df_to_pitcher_rows(df_pit, season_year)
@@ -274,45 +306,23 @@ def refresh_statcast(season_year: Optional[int] = None) -> dict:
         metrics["n_hitters"] = n_hit
         log.info("Upserted %d hitter xStats rows", n_hit)
 
-        # ---------- 2. FanGraphs aggregates (NEW for pitch-budget) ----------
-        log.info("Pulling FanGraphs pitcher aggregates for %d", season_year)
+        # ---------- 2. MLB Stats API: pitch-budget data ----------
         try:
-            import requests, pandas as pd
-            r = requests.get(
-                "https://www.fangraphs.com/api/leaders/major-league/data",
-                params={"stats": "pit", "season": season_year, "season1": season_year,
-                        "pageitems": 10000, "qual": 0, "type": 8, "month": 0, "ind": 0},
-                headers={"User-Agent": "Mozilla/5.0"},
-                timeout=30,
-            )
-            r.raise_for_status()
-            df_pit_fg = pd.DataFrame(r.json()["data"])
-            pit_budget_rows = _df_to_pitcher_budget_rows(df_pit_fg, season_year)
-            n_pit_b = _upsert_pitcher_budget(pit_budget_rows)
+            t0 = time.time()
+            n_pit_b = _refresh_pitcher_budget(season_year)
             metrics["n_pitcher_budget"] = n_pit_b
-            log.info("Updated %d pitcher pitch-budget rows", n_pit_b)
+            log.info("Updated %d pitcher pitch-budget rows in %.1fs", n_pit_b, time.time() - t0)
         except Exception as e:
-            # Non-fatal: keep existing budget data, log the warning
-            log.warning("FanGraphs pitcher fetch failed (non-fatal): %s", e)
+            log.warning("Pitcher pitch-budget refresh failed (non-fatal): %s", e)
             metrics["pitcher_budget_error"] = str(e)
 
-        log.info("Pulling FanGraphs hitter aggregates for %d", season_year)
         try:
-            r = requests.get(
-                "https://www.fangraphs.com/api/leaders/major-league/data",
-                params={"stats": "bat", "season": season_year, "season1": season_year,
-                        "pageitems": 10000, "qual": 0, "type": 8, "month": 0, "ind": 0},
-                headers={"User-Agent": "Mozilla/5.0"},
-                timeout=30,
-            )
-            r.raise_for_status()
-            df_hit_fg = pd.DataFrame(r.json()["data"])
-            hit_budget_rows = _df_to_hitter_budget_rows(df_hit_fg, season_year)
-            n_hit_b = _upsert_hitter_budget(hit_budget_rows)
+            t0 = time.time()
+            n_hit_b = _refresh_hitter_budget(season_year)
             metrics["n_hitter_budget"] = n_hit_b
-            log.info("Updated %d hitter pitch-budget rows", n_hit_b)
+            log.info("Updated %d hitter pitch-budget rows in %.1fs", n_hit_b, time.time() - t0)
         except Exception as e:
-            log.warning("FanGraphs batting fetch failed (non-fatal): %s", e)
+            log.warning("Hitter pitch-budget refresh failed (non-fatal): %s", e)
             metrics["hitter_budget_error"] = str(e)
 
         db.log_job_finish(job_id, "success", payload=metrics)
