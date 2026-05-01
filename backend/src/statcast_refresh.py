@@ -277,7 +277,16 @@ def refresh_statcast(season_year: Optional[int] = None) -> dict:
         # ---------- 2. FanGraphs aggregates (NEW for pitch-budget) ----------
         log.info("Pulling FanGraphs pitcher aggregates for %d", season_year)
         try:
-            df_pit_fg = pitching_stats(season_year, qual=1)
+            import requests, pandas as pd
+            r = requests.get(
+                "https://www.fangraphs.com/api/leaders/major-league/data",
+                params={"stats": "pit", "season": season_year, "season1": season_year,
+                        "pageitems": 10000, "qual": 0, "type": 8, "month": 0, "ind": 0},
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=30,
+            )
+            r.raise_for_status()
+            df_pit_fg = pd.DataFrame(r.json()["data"])
             pit_budget_rows = _df_to_pitcher_budget_rows(df_pit_fg, season_year)
             n_pit_b = _upsert_pitcher_budget(pit_budget_rows)
             metrics["n_pitcher_budget"] = n_pit_b
@@ -289,7 +298,15 @@ def refresh_statcast(season_year: Optional[int] = None) -> dict:
 
         log.info("Pulling FanGraphs hitter aggregates for %d", season_year)
         try:
-            df_hit_fg = batting_stats(season_year, qual=1)
+            r = requests.get(
+                "https://www.fangraphs.com/api/leaders/major-league/data",
+                params={"stats": "bat", "season": season_year, "season1": season_year,
+                        "pageitems": 10000, "qual": 0, "type": 8, "month": 0, "ind": 0},
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=30,
+            )
+            r.raise_for_status()
+            df_hit_fg = pd.DataFrame(r.json()["data"])
             hit_budget_rows = _df_to_hitter_budget_rows(df_hit_fg, season_year)
             n_hit_b = _upsert_hitter_budget(hit_budget_rows)
             metrics["n_hitter_budget"] = n_hit_b
