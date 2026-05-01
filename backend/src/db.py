@@ -137,12 +137,15 @@ def upsert_team_bullpen_stats(rows: list[dict]) -> int:
     if not rows:
         return 0
     sql = """
-        UPDATE team_xstats SET
-          bullpen_era = %(bullpen_era)s,
-          bullpen_xera = %(bullpen_xera)s,
-          bullpen_ip = %(bullpen_ip)s,
-          refreshed_at = now()
-        WHERE team_code = %(team_code)s AND season_year = %(season_year)s;
+        INSERT INTO team_xstats
+          (team_code, season_year, bullpen_era, bullpen_xera, bullpen_ip, refreshed_at)
+        VALUES
+          (%(team_code)s, %(season_year)s, %(bullpen_era)s, %(bullpen_xera)s, %(bullpen_ip)s, now())
+        ON CONFLICT (team_code, season_year) DO UPDATE SET
+          bullpen_era = EXCLUDED.bullpen_era,
+          bullpen_xera = EXCLUDED.bullpen_xera,
+          bullpen_ip = EXCLUDED.bullpen_ip,
+          refreshed_at = now();
     """
     return execute_many(sql, rows)
 
