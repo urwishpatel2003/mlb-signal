@@ -128,6 +128,25 @@ def upsert_hitter_xstats(rows: list[dict]) -> int:
     return execute_many(sql, rows)
 
 
+def upsert_team_bullpen_stats(rows: list[dict]) -> int:
+    """
+    Update bullpen aggregate fields on team_xstats. Assumes the row already
+    exists (it does, from upsert_team_xstats during the xStats refresh path).
+    Does NOT insert; if the team_code/season_year row is missing we skip silently.
+    """
+    if not rows:
+        return 0
+    sql = """
+        UPDATE team_xstats SET
+          bullpen_era = %(bullpen_era)s,
+          bullpen_xera = %(bullpen_xera)s,
+          bullpen_ip = %(bullpen_ip)s,
+          refreshed_at = now()
+        WHERE team_code = %(team_code)s AND season_year = %(season_year)s;
+    """
+    return execute_many(sql, rows)
+
+
 def upsert_team_xstats(rows: list[dict]) -> int:
     if not rows:
         return 0
