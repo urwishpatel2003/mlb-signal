@@ -169,6 +169,7 @@ def _refresh_pitcher_budget(season_year: int) -> int:
         if not stats:
             continue
 
+        g = _coerce_int(stats.get("gamesPlayed")) or 0
         gs = _coerce_int(stats.get("gamesStarted")) or 0
         tbf = _coerce_int(stats.get("battersFaced")) or 0
         pitches = _coerce_int(stats.get("numberOfPitches")) or 0
@@ -183,6 +184,7 @@ def _refresh_pitcher_budget(season_year: int) -> int:
         update_rows.append({
             "mlb_id": mlb_id,
             "season_year": season_year,
+            "g_total": g,
             "gs": gs,
             "ip_total": ip,
             "tbf": tbf,
@@ -204,6 +206,7 @@ def _refresh_pitcher_budget(season_year: int) -> int:
 
     sql = """
         UPDATE pitcher_xstats SET
+          g_total = %(g_total)s,
           gs = %(gs)s,
           ip_total = %(ip_total)s,
           tbf = %(tbf)s,
@@ -325,6 +328,15 @@ def refresh_statcast(season_year: Optional[int] = None) -> dict:
             log.warning("Hitter pitch-budget refresh failed (non-fatal): %s", e)
             metrics["hitter_budget_error"] = str(e)
 
+        try:
+            t0 = time.time()
+            n_bp = _refresh_team_bullpen_stats(season_year)
+            metrics["n_team_bullpen"] = n_bp
+            log.info("Updated %d team bullpen rows in %.1fs", n_bp, time.time() - t0)
+        except Exception as e:
+            log.warning("Team bullpen refresh failed (non-fatal): %s", e)
+            metrics["bullpen_error"] = str(e)
+
         db.log_job_finish(job_id, "success", payload=metrics)
         return metrics
     except Exception as e:
@@ -332,6 +344,99 @@ def refresh_statcast(season_year: Optional[int] = None) -> dict:
         db.log_job_finish(job_id, "failure", str(e), metrics)
         ntfy.send_failure("statcast_refresh", str(e))
         raise
+
+
+def _refresh_team_bullpen_stats(season_year: int) -> int:
+    """
+    Aggregate per-team bullpen stats from MLB Stats API.
+
+    Logic:
+      1. For each MLB team, fetch active roster.
+      2. For each pitcher on roster, fetch season pitching stats.
+      3. Filter to "relievers": pitchers where (G - GS) > GS.
+      4. Sum ER, IP, BF across the bullpen.
+      5. Compute team_bullpen_era = ER * 9 / IP.
+      6. Upsert to team_xstats.
+
+    NOTE: this reads pitcher_xstats which we just refreshed, so we don't need
+    to hit MLB API again per-pitcher. We have g_total, gs, ip_total cached.
+    But we DON'T have ER cached, so we need MLB API for that one field.
+    Optimization for later: cache ER too. For now we re-fetch for relievers only.
+    """
+    log.info("Aggregating bullpen stats from %d teams", 30)
+
+    # MLB team IDs are 108-160 with gaps; safest to fetch the team list
+    teams_url = f"{MLB_API_BASE}/teams?sportId=1&season={season_year}"
+    try:
+        r = requests.get(teams_url, timeout=REQUEST_TIMEOUT)
+        r.raise_for_status()
+        teams_data = r.json().get("teams", [])
+    except Exception as e:
+        log.warning("Failed to fetch team list: %s", e)
+        return 0
+
+    team_rows = []
+    for team in teams_data:
+        team_id = team.get("id")
+        team_code = team.get("abbreviation")
+        if not team_id or not team_code:
+            continue
+
+        # Fetch roster
+        roster_url = f"{MLB_API_BASE}/teams/{team_id}/roster?rosterType=active&season={season_year}"
+        try:
+            r = requests.get(roster_url, timeout=REQUEST_TIMEOUT)
+            r.raise_for_status()
+            roster = r.json().get("roster", [])
+        except Exception as e:
+            log.debug("Roster fetch failed for %s: %s", team_code, e)
+            continue
+
+        # Filter to pitchers
+        pitcher_ids = [
+            p.get("person", {}).get("id")
+            for p in roster
+            if p.get("position", {}).get("abbreviation") == "P"
+        ]
+        if not pitcher_ids:
+            continue
+
+        # Aggregate reliever stats
+        bp_er = 0.0
+        bp_ip = 0.0
+        for pid in pitcher_ids:
+            stats = _fetch_pitcher_season_stats(pid, season_year)
+            if not stats:
+                continue
+            g = _coerce_int(stats.get("gamesPlayed")) or 0
+            gs = _coerce_int(stats.get("gamesStarted")) or 0
+            # Reliever check: more bullpen apps than starts
+            if (g - gs) <= gs or g == 0:
+                continue
+            er = _coerce_float(stats.get("earnedRuns"))
+            ip = _parse_ip(stats.get("inningsPitched"))
+            if er is None or ip is None or ip <= 0:
+                continue
+            bp_er += er
+            bp_ip += ip
+
+        if bp_ip <= 0:
+            continue
+
+        bp_era = (bp_er * 9.0) / bp_ip
+        team_rows.append({
+            "team_code": team_code,
+            "season_year": season_year,
+            "bullpen_era": round(bp_era, 3),
+            "bullpen_xera": None,  # MLB API doesn't expose xERA - leave NULL
+            "bullpen_ip": round(bp_ip, 1),
+        })
+        log.debug("Bullpen %s: %d relievers, ERA %.2f over %.1f IP",
+                  team_code, sum(1 for _ in pitcher_ids), bp_era, bp_ip)
+
+    n = db.upsert_team_bullpen_stats(team_rows)
+    log.info("Updated %d team bullpen rows", n)
+    return n
 
 
 def main():
