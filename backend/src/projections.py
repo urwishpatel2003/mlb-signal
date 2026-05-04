@@ -35,6 +35,7 @@ LEAGUE_XWOBA = 0.320
 LEAGUE_XBA = 0.245
 LEAGUE_K9 = 8.5
 LEAGUE_BB9 = 3.2
+LEAGUE_K_PCT = 0.225  # Empirical league avg K rate (per PA)
 LEAGUE_ER9 = 4.30
 
 # Platoon multipliers on opp xwOBA (league-average; per-hitter splits will refine).
@@ -141,6 +142,35 @@ def opp_lineup_xwoba(lineup: list[HitterSpot],
         return team_fallback, False
 
     return weighted_sum / total_w, True
+
+
+def opp_lineup_k_pct(lineup: list[HitterSpot],
+                     hitter_xstats: dict[int, dict],
+                     pa_threshold: int = 30) -> Optional[float]:
+    """
+    Lineup-weighted opposing K rate (per PA), weighted by batting order via PA_WEIGHTS.
+    Returns None if fewer than 6 hitters have usable k_pct data; caller should
+    fall back to LEAGUE_K_PCT (i.e. no adjustment).
+    """
+    if not lineup:
+        return None
+    weighted_sum = 0.0
+    total_w = 0.0
+    matched = 0
+    for spot in lineup:
+        row = hitter_xstats.get(spot.mlb_id)
+        if not row or (row.get("pa") or 0) < pa_threshold:
+            continue
+        k_pct = row.get("k_pct")
+        if k_pct is None:
+            continue
+        pa_w = PA_WEIGHTS.get(spot.order, 4.0)
+        weighted_sum += float(k_pct) * pa_w
+        total_w += pa_w
+        matched += 1
+    if matched < 6 or total_w == 0:
+        return None
+    return weighted_sum / total_w
 
 
 def _wind_components(wind_deg: Optional[float], cf_az: float) -> tuple[float, float]:
@@ -288,7 +318,15 @@ def project_pitcher(
         )
         # K rate scaled off contact suppression
         k_scaler = (LEAGUE_XWOBA - xwoba_against) * 0.40
-        k_pct = max(0.14, min(0.35, 0.225 + k_scaler))
+        k_pct = 0.225 + k_scaler
+        # Apply lineup K vulnerability adjustment when data available
+        lineup_k = opp_lineup_k_pct(opp_lineup, hitter_xstats)
+        if lineup_k is not None:
+            k_factor = lineup_k / LEAGUE_K_PCT
+            # Cap adjustment at +/-15% to avoid pathological projections
+            k_factor = max(0.85, min(1.15, k_factor))
+            k_pct = k_pct * k_factor
+        k_pct = max(0.14, min(0.35, k_pct))
         # Walk rate heuristic from quality (will refine when we have xBB rate)
         if true_era > 5.5:
             bb9 = LEAGUE_BB9 * 1.20
