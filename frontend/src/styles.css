@@ -1320,3 +1320,16 @@ html, body {
   color: #5a8;
   font-weight: 500;
 }
+
+/* Inline per-team projection next to team codes */
+.matchup .team-proj {
+  display: inline-block;
+  margin: 0 6px;
+  padding: 1px 6px;
+  background: #1a1a1a;
+  color: #aaa;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 3px;
+  vertical-align: middle;
+}

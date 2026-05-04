@@ -100,7 +100,7 @@ def _slate_for_date(slate_date: str) -> dict:
         SELECT g.*, gp.proj_total, gp.proj_f5, gp.edge_total, gp.lean
         FROM games g
         LEFT JOIN LATERAL (
-            SELECT proj_total, proj_f5, edge_total, lean
+            SELECT proj_total, proj_f5, proj_home_runs, proj_away_runs, edge_total, lean
             FROM game_projections gp_inner
             JOIN projection_runs pr ON pr.run_id = gp_inner.run_id
             WHERE gp_inner.game_pk = g.game_pk AND pr.run_date = %s

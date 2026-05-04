@@ -147,7 +147,7 @@ def compute_edges_for_game(*, game_pk: int, game: dict,
     edges: list[dict] = []
 
     # ---- Game total ----
-    full_total, f5_total = projections.project_game_total(
+    full_total, f5_total, home_runs, away_runs = projections.project_game_total(
         away_proj=away_proj, home_proj=home_proj,
         away_team_xstats=away_team_xstats, home_team_xstats=home_team_xstats
     )
@@ -382,7 +382,7 @@ def run(trigger: str = "manual") -> dict:
                     away_proj = proj
 
             # Game total + edges
-            full_total, f5_total = projections.project_game_total(
+            full_total, f5_total, home_runs, away_runs = projections.project_game_total(
                 away_proj=away_proj, home_proj=home_proj,
                 away_team_xstats=all_team.get(g.away_team),
                 home_team_xstats=all_team.get(g.home_team),
@@ -402,6 +402,8 @@ def run(trigger: str = "manual") -> dict:
                 "game_pk": g.game_pk,
                 "proj_total": full_total,
                 "proj_f5": f5_total,
+                "proj_home_runs": home_runs,
+                "proj_away_runs": away_runs,
                 "market_total": market_total,
                 "edge_total": round(edge_total, 2) if edge_total is not None else None,
                 "lean": lean,

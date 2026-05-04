@@ -399,7 +399,7 @@ def project_game_total(
     Uses per-team bullpen ER/9 when team_xstats data is available.
     Bullpen runs adjusted by park + weather factors (same as starters).
 
-    Returns (full_game_total, f5_total).
+    Returns (full_game_total, f5_total, home_runs, away_runs).
     """
     starter_runs = away_proj.er + home_proj.er
     away_bp_er9 = _compute_team_bullpen_er9(away_team_xstats, league_bullpen_er9)
@@ -418,6 +418,11 @@ def project_game_total(
         )
     park_wx = pf_runs * wx_run
 
+    # Per-team runs: each team's offense scores against the OTHER team's pitching
+    # home_runs = home offense vs (away starter + away bullpen)
+    # away_runs = away offense vs (home starter + home bullpen)
+    home_runs = away_proj.er + (9 - away_proj.ip) * (away_bp_er9 / 9) * park_wx
+    away_runs = home_proj.er + (9 - home_proj.ip) * (home_bp_er9 / 9) * park_wx
     bullpen_runs = (
         (9 - away_proj.ip) * (away_bp_er9 / 9) * park_wx
         + (9 - home_proj.ip) * (home_bp_er9 / 9) * park_wx
@@ -435,4 +440,4 @@ def project_game_total(
         f5_home = 0
     f5_total = f5_away + f5_home
 
-    return round(full_total, 2), round(f5_total, 2)
+    return round(full_total, 2), round(f5_total, 2), round(home_runs, 2), round(away_runs, 2)

@@ -421,7 +421,17 @@ function GameCard({ game, projs }) {
   return (
     <div className={`game-card ${flag}`}>
       <div className="game-header">
-        <span className="matchup">{game.away_team} @ {game.home_team}</span>
+        <span className="matchup">
+          {game.away_team}
+          {game.proj_away_runs != null && (
+            <span className="team-proj">{Number(game.proj_away_runs).toFixed(1)}</span>
+          )}
+          {' @ '}
+          {game.home_team}
+          {game.proj_home_runs != null && (
+            <span className="team-proj">{Number(game.proj_home_runs).toFixed(1)}</span>
+          )}
+        </span>
         <span className="time">{game.game_time_et}</span>
       </div>
       {[awayProj, homeProj].filter(Boolean).map(p => (

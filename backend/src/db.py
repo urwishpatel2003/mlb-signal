@@ -267,10 +267,11 @@ def insert_pitcher_projection(run_id: int, p: dict) -> None:
 def insert_game_projection(run_id: int, g: dict) -> None:
     sql = """
         INSERT INTO game_projections (
-          run_id, game_pk, proj_total, proj_f5, market_total, edge_total,
-          lean, confidence_tier
+          run_id, game_pk, proj_total, proj_f5, proj_home_runs, proj_away_runs,
+          market_total, edge_total, lean, confidence_tier
         ) VALUES (
           %(run_id)s, %(game_pk)s, %(proj_total)s, %(proj_f5)s,
+          %(proj_home_runs)s, %(proj_away_runs)s,
           %(market_total)s, %(edge_total)s, %(lean)s, %(confidence_tier)s
         )
     """
