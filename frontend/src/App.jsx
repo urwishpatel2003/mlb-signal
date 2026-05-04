@@ -156,6 +156,9 @@ function Masthead({ slate }) {
 }
 
 function EdgesView({ edges, kind }) {
+  const PROP_CATEGORIES = ['K', 'Outs', 'ER', 'Hits', 'Walks'];
+  const [propCategory, setPropCategory] = useState('K');
+
   const emptyMsg = kind === 'game'
     ? 'No game total edges flagged tonight.'
     : 'No pitcher prop edges flagged tonight.';
@@ -171,6 +174,10 @@ function EdgesView({ edges, kind }) {
     return Math.abs(b.edge) - Math.abs(a.edge);
   });
 
+  const displayed = kind === 'prop'
+    ? sorted.filter(e => e.category === propCategory)
+    : sorted;
+
   const heading = kind === 'game' ? 'Game totals.' : 'Pitcher props.';
   const deck = kind === 'game'
     ? 'Over/under on combined runs scored - 9 innings'
@@ -183,6 +190,22 @@ function EdgesView({ edges, kind }) {
         <span className="deck">{deck}</span>
       </div>
 
+      {kind === 'prop' && (
+        <div className="prop-cat-tabs">
+          {PROP_CATEGORIES.map(cat => {
+            const count = sorted.filter(e => e.category === cat).length;
+            return (
+              <button
+                key={cat}
+                className={`prop-cat-tab ${propCategory === cat ? 'active' : ''}`}
+                onClick={() => setPropCategory(cat)}
+              >
+                {MARKET_LABELS[cat] || cat} ({count})
+              </button>
+            );
+          })}
+        </div>
+      )}
       <div className="edges-table">
         <div className="edges-thead">
           <span>{kind === 'game' ? 'Matchup' : 'Pitcher'}</span>
@@ -193,7 +216,11 @@ function EdgesView({ edges, kind }) {
           <span>Conviction</span>
         </div>
         <div className="edges-tbody">
-          {sorted.map((e, i) => <EdgeRow key={e.edge_id || i} edge={e} />)}
+          {displayed.length === 0 ? (
+            <div className="empty">No {MARKET_LABELS[propCategory] || propCategory} edges flagged.</div>
+          ) : (
+            displayed.map((e, i) => <EdgeRow key={e.edge_id || i} edge={e} />)
+          )}
         </div>
       </div>
     </section>

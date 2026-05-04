@@ -1289,3 +1289,34 @@ html, body {
     display: none;
   }
 }
+/* ===== Pitcher props category tabs ===== */
+.prop-cat-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0 16px 0;
+  flex-wrap: wrap;
+}
+
+.prop-cat-tab {
+  padding: 6px 14px;
+  border: 1px solid #2a2a2a;
+  background: transparent;
+  color: #888;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.prop-cat-tab:hover {
+  border-color: #444;
+  color: #ccc;
+}
+
+.prop-cat-tab.active {
+  border-color: #5a8;
+  background: #1a2a22;
+  color: #5a8;
+  font-weight: 500;
+}
