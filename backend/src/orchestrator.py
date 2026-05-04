@@ -237,6 +237,9 @@ def persist_game(g: mlb_api.Game) -> None:
         "weather_condition": weather.get("condition"),
         "weather_temp_f": weather.get("temp_f"),
         "weather_wind": weather.get("wind_raw"),
+        "weather_wind_mph": weather.get("wind_mph"),
+        "weather_wind_deg": weather.get("wind_deg"),
+        "weather_precip_pct": weather.get("precip_pct"),
     })
 
     # Lineups
@@ -382,7 +385,9 @@ def run(trigger: str = "manual") -> dict:
             full_total, f5_total = projections.project_game_total(
                 away_proj=away_proj, home_proj=home_proj,
                 away_team_xstats=all_team.get(g.away_team),
-                home_team_xstats=all_team.get(g.home_team)
+                home_team_xstats=all_team.get(g.home_team),
+                park=park,
+                weather=weather,
             )
             market_total = float(game_row.get("market_total")) if game_row.get("market_total") else None
             edge_total = (full_total - market_total) if market_total else None

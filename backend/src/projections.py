@@ -390,18 +390,38 @@ def project_game_total(
     home_proj: PitcherProjection,
     away_team_xstats: Optional[dict] = None,
     home_team_xstats: Optional[dict] = None,
+    park: Optional[dict] = None,
+    weather: Optional[dict] = None,
     league_bullpen_er9: float = 4.0,
 ) -> tuple[float, float]:
     """
     Combine starter projections into full game and F5 totals.
     Uses per-team bullpen ER/9 when team_xstats data is available.
+    Bullpen runs adjusted by park + weather factors (same as starters).
 
     Returns (full_game_total, f5_total).
     """
     starter_runs = away_proj.er + home_proj.er
     away_bp_er9 = _compute_team_bullpen_er9(away_team_xstats, league_bullpen_er9)
     home_bp_er9 = _compute_team_bullpen_er9(home_team_xstats, league_bullpen_er9)
-    bullpen_runs = (9 - away_proj.ip) * (away_bp_er9 / 9) + (9 - home_proj.ip) * (home_bp_er9 / 9)
+
+    # Park + weather adjustments for bullpen (was missing - bullpens pitch in same conditions as starters)
+    pf_runs = float((park or {}).get("pf_runs") or 100) / 100.0
+    cf_az = float((park or {}).get("cf_azimuth_deg") or 0)
+    is_dome = ((park or {}).get("roof_type") or "").lower() in ("dome", "closed")
+    if is_dome or not weather:
+        wx_run = 1.0
+    else:
+        wx_run = (
+            temp_run_factor(weather.get("temp_f"))
+            * wind_run_factor(weather.get("wind_mph"), weather.get("wind_deg"), cf_az)
+        )
+    park_wx = pf_runs * wx_run
+
+    bullpen_runs = (
+        (9 - away_proj.ip) * (away_bp_er9 / 9) * park_wx
+        + (9 - home_proj.ip) * (home_bp_er9 / 9) * park_wx
+    )
     full_total = starter_runs + bullpen_runs
 
     # F5: just the starter contribution scaled to 5 IP each

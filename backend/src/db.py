@@ -174,7 +174,7 @@ def upsert_game(g: dict) -> None:
           away_pitcher_id, home_pitcher_id, away_pitcher_hand, home_pitcher_hand,
           away_pitcher_name, home_pitcher_name,
           away_score, home_score,
-          weather_condition, weather_temp_f, weather_wind,
+          weather_condition, weather_temp_f, weather_wind, weather_wind_mph, weather_wind_deg, weather_precip_pct,
           refreshed_at
         ) VALUES (
           %(game_pk)s, %(game_date)s, %(game_time_et)s, %(status)s,
@@ -182,7 +182,7 @@ def upsert_game(g: dict) -> None:
           %(away_pitcher_id)s, %(home_pitcher_id)s, %(away_pitcher_hand)s, %(home_pitcher_hand)s,
           %(away_pitcher_name)s, %(home_pitcher_name)s,
           %(away_score)s, %(home_score)s,
-          %(weather_condition)s, %(weather_temp_f)s, %(weather_wind)s,
+          %(weather_condition)s, %(weather_temp_f)s, %(weather_wind)s, %(weather_wind_mph)s, %(weather_wind_deg)s, %(weather_precip_pct)s,
           now()
         )
         ON CONFLICT (game_pk) DO UPDATE SET
@@ -202,6 +202,9 @@ def upsert_game(g: dict) -> None:
           weather_condition = EXCLUDED.weather_condition,
           weather_temp_f = EXCLUDED.weather_temp_f,
           weather_wind = EXCLUDED.weather_wind,
+          weather_wind_mph = EXCLUDED.weather_wind_mph,
+          weather_wind_deg = EXCLUDED.weather_wind_deg,
+          weather_precip_pct = EXCLUDED.weather_precip_pct,
           refreshed_at = now();
     """
     execute(sql, g)
