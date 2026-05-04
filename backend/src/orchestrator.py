@@ -328,6 +328,15 @@ def run(trigger: str = "manual") -> dict:
                 metrics["skipped_no_lineup"] = metrics.get("skipped_no_lineup", 0) + 1
                 continue
 
+            db_row = db.fetchone(
+                "SELECT skip_projection FROM games WHERE game_pk = %s",
+                (g.game_pk,)
+            )
+            if db_row and db_row.get('skip_projection'):
+                log.info("Skipping %s - manually flagged skip_projection", g.game_pk)
+                metrics["skipped_manual"] = metrics.get("skipped_manual", 0) + 1
+                continue
+
             park = all_parks.get(get_park_for_team(g.home_team)) or {}
             game_row = db.fetchone(
                 "SELECT * FROM games WHERE game_pk = %s", (g.game_pk,)
