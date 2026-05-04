@@ -99,19 +99,39 @@ def _slate_for_date(slate_date: str) -> dict:
         """
         SELECT g.*, gp.proj_total, gp.proj_f5, gp.edge_total, gp.lean
         FROM games g
-        LEFT JOIN game_projections gp ON gp.game_pk = g.game_pk AND gp.run_id = %s
+        LEFT JOIN LATERAL (
+            SELECT proj_total, proj_f5, edge_total, lean
+            FROM game_projections gp_inner
+            JOIN projection_runs pr ON pr.run_id = gp_inner.run_id
+            WHERE gp_inner.game_pk = g.game_pk AND pr.run_date = %s
+            ORDER BY gp_inner.run_id DESC
+            LIMIT 1
+        ) gp ON TRUE
         WHERE g.game_date = %s
         ORDER BY g.game_time_et
         """,
-        (run_id, slate_date),
+        (slate_date, slate_date),
     )
     edges = db.fetchall(
-        "SELECT * FROM edges WHERE run_id = %s ORDER BY ABS(edge) DESC",
-        (run_id,),
+        """
+        SELECT DISTINCT ON (e.game_pk, e.kind, e.category, COALESCE(e.pitcher_mlb_id, 0), e.lean)
+               e.*
+        FROM edges e
+        JOIN projection_runs pr ON pr.run_id = e.run_id
+        WHERE pr.run_date = %s
+        ORDER BY e.game_pk, e.kind, e.category, COALESCE(e.pitcher_mlb_id, 0), e.lean, e.run_id DESC
+        """,
+        (slate_date,),
     )
     projs = db.fetchall(
-        "SELECT * FROM pitcher_projections WHERE run_id = %s",
-        (run_id,),
+        """
+        SELECT DISTINCT ON (pp.game_pk, pp.mlb_id) pp.*
+        FROM pitcher_projections pp
+        JOIN projection_runs pr ON pr.run_id = pp.run_id
+        WHERE pr.run_date = %s
+        ORDER BY pp.game_pk, pp.mlb_id, pp.run_id DESC
+        """,
+        (slate_date,),
     )
     return {
         "date": slate_date,
