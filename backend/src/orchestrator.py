@@ -136,10 +136,8 @@ def compute_edges_for_game(*,game_pk,game,away_proj,home_proj,
 def persist_game(g):
     weather={}
     if g.weather:
-        from .weather import parse_wind
-        mph,deg=parse_wind(g.weather.wind or "")
         weather={"condition":g.weather.condition,"temp_f":g.weather.temp_f,
-                 "wind_raw":g.weather.wind,"wind_mph":mph,"wind_deg":deg,"precip_pct":None}
+                 "wind_raw":g.weather.wind,"wind_mph":None,"wind_deg":None,"precip_pct":None}
     else:
         try: weather=enrich_weather_for_game(g)
         except Exception as e: log.debug("Weather failed: %s",e)
@@ -287,3 +285,4 @@ def main():
     print(run(trigger=ap.parse_args().trigger))
 
 if __name__=="__main__": main()
+
