@@ -111,7 +111,8 @@ def compute_edges_for_game(*,game_pk,game,away_proj,home_proj,
 
     for p in (away_proj,home_proj):
         if p.source!="statcast": continue
-        pitcher_dk=_DK_LINES.get(p.pitcher_mlb_id) if _DK_LINES else None
+        pitcher_dk=odds_props.lookup_lines(p.last_first,_DK_LINES) if _DK_LINES else None
+        if pitcher_dk: pitcher_dk={cat:{"line":v,"over_price":None,"under_price":None} if not isinstance(v,dict) else v for cat,v in pitcher_dk.items()}
         if not pitcher_dk: continue
         proj_vals={"K":p.k,"Hits":p.hits,"ER":p.er,"Outs":p.outs}
         for category,prop_data in pitcher_dk.items():
@@ -281,6 +282,7 @@ def main():
     print(run(trigger=ap.parse_args().trigger))
 
 if __name__=="__main__": main()
+
 
 
 
