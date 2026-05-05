@@ -58,19 +58,13 @@ def fetch_current_odds() -> list[dict]:
     full_data = _get_raw("h2h,totals")
 
     # F5 — separate call; non-fatal if unavailable
-    f5_data = _get_raw("first_five_innings")
-    f5_lookup: dict[tuple, dict] = {}
-    for game in f5_data:
-        ac, hc = _to_code(game.get("away_team","")), _to_code(game.get("home_team",""))
-        if not ac or not hc or (ac,hc) in f5_lookup: continue
-        def parse_f5(outcomes):
-            t = ov = un = None
-            for o in outcomes:
-                if o.get("name")=="Over":  t=float(o["point"]); ov=int(o["price"])
-                elif o.get("name")=="Under": un=int(o["price"])
-            return {"market_f5_total":t,"market_f5_over_price":ov,"market_f5_under_price":un} if t else None
-        result = _best_book(game.get("bookmakers",[]), "first_five_innings", parse_f5)
-        if result: f5_lookup[(ac,hc)] = result
+    # F5 - fetch from DraftKings (first_five_innings not on Odds API tier)
+    from . import dk_props as _dk
+    try:
+        f5_lookup = _dk.fetch_f5_lines_for_today()
+    except Exception as e:
+        log.warning('DK F5 fetch failed (non-fatal): %s', e)
+        f5_lookup = {}
 
     out = []
     for game in full_data:

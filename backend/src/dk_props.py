@@ -286,6 +286,97 @@ def lookup_lines(pitcher_name: str, dk_lines: dict[str, dict[str, dict]]) -> Opt
     return out or None
 
 
+
+def fetch_f5_lines_for_today() -> dict:
+    """
+    Fetch F5 (first 5 innings) total lines from DraftKings.
+    DK category=game-lines, subcategory=first-half
+    Returns: {(away_code, home_code): {"market_f5_total": 4.5, ...}}
+    Returns {} on any failure.
+    """
+    url = (f"{DK_BASE}/eventgroups/{MLB_EVENT_GROUP}"
+           f"?category=game-lines&subcategory=first-half&format=json")
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=12)
+        if r.status_code != 200:
+            log.warning("DK F5 returned %d", r.status_code)
+            return {}
+        payload = r.json()
+    except Exception as e:
+        log.warning("DK F5 fetch failed: %s", e)
+        return {}
+
+    DK_TEAM_MAP = {
+        "arizona": "ARI", "atlanta": "ATL", "baltimore": "BAL", "boston": "BOS",
+        "chicago cubs": "CHC", "chicago white sox": "CWS", "cincinnati": "CIN",
+        "cleveland": "CLE", "colorado": "COL", "detroit": "DET", "houston": "HOU",
+        "kansas city": "KC", "los angeles angels": "LAA", "los angeles dodgers": "LAD",
+        "miami": "MIA", "milwaukee": "MIL", "minnesota": "MIN", "new york mets": "NYM",
+        "new york yankees": "NYY", "athletics": "ATH", "oakland": "ATH",
+        "philadelphia": "PHI", "pittsburgh": "PIT", "san diego": "SD",
+        "san francisco": "SF", "seattle": "SEA", "st. louis": "STL",
+        "tampa bay": "TB", "texas": "TEX", "toronto": "TOR", "washington": "WSH",
+    }
+
+    def dk_to_code(name):
+        name_l = name.lower().strip()
+        for key, code in DK_TEAM_MAP.items():
+            if key in name_l:
+                return code
+        return ""
+
+    out = {}
+    offers_list = _deep_find_offers(payload)
+    if not offers_list:
+        log.warning("DK F5: no offers found in payload")
+        return {}
+
+    flat = []
+    for inner in offers_list:
+        if isinstance(inner, list): flat.extend(inner)
+        elif isinstance(inner, dict): flat.append(inner)
+
+    for offer in flat:
+        if not isinstance(offer, dict): continue
+        outcomes = offer.get("outcomes") or []
+        if not outcomes: continue
+        labels = [(o.get("label") or "").lower() for o in outcomes]
+        if not any(l in ("over", "under", "o", "u") for l in labels): continue
+
+        event_name = (offer.get("eventName") or offer.get("label") or "").lower()
+        away_code = home_code = ""
+        if " at " in event_name:
+            parts = event_name.split(" at ", 1)
+            away_code = dk_to_code(parts[0])
+            home_code = dk_to_code(parts[1])
+        elif "@" in event_name:
+            parts = event_name.split("@", 1)
+            away_code = dk_to_code(parts[0])
+            home_code = dk_to_code(parts[1])
+
+        if not away_code or not home_code: continue
+
+        line = over_price = under_price = None
+        for outc in outcomes:
+            label = (outc.get("label") or "").strip().lower()
+            ln = outc.get("line")
+            if ln is not None and line is None:
+                try: line = float(ln)
+                except: pass
+            price = _american_to_int(outc.get("oddsAmerican"))
+            if label in ("over", "o"): over_price = price
+            elif label in ("under", "u"): under_price = price
+
+        if line is not None and (away_code, home_code) not in out:
+            out[(away_code, home_code)] = {
+                "market_f5_total": line,
+                "market_f5_over_price": over_price,
+                "market_f5_under_price": under_price,
+            }
+
+    log.info("DK F5: %d game lines found", len(out))
+    return out
+
 # CLI for quick verification
 if __name__ == "__main__":
     import json as _json
