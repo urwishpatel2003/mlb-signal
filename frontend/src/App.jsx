@@ -500,6 +500,135 @@ function OverallCard({overall}){
 }
 function DayCard({day}){
   const [open,setOpen]=useState(false);
+  const s=day.summary||{};
+  const wins=s.wins||0;
+  const losses=s.losses||0;
+  const pushes=s.pushes||0;
+  const profit=s.profit_units||0;
+  const buckets=day.buckets||[];
+  const rate=wins+losses>0?Math.round(wins/(wins+losses)*100):0;
+  return (
+    <div className={`day-card ${profit>=0?'pos':'neg'}`}>
+      <div className="day-header" onClick={()=>setOpen(!open)}>
+        <span className="day-date">{day.run_date}</span>
+        <div className="day-summary">
+          <span className="day-wl">{wins}-{losses}{pushes>0?`-${pushes}`:''}</span>
+          <span className="day-rate">{rate}%</span>
+          <span className={`day-units ${profit>=0?'pos':'neg'}`}>{fmtSign(profit)}u</span>
+        </div>
+        <span className="day-toggle">{open?'▲':'▼'}</span>
+      </div>
+      {open&&<div className="day-sections">
+        {buckets.map((b,bi)=>(
+          <div key={bi} className="day-section">
+            <div className="day-section-header">
+              <span className="section-name">{b.category} {b.lean}</span>
+              <span className="section-stats">
+                {b.wins}-{b.losses}
+                {b.pushes>0?`-${b.pushes}`:''}&nbsp;
+                <span className={b.profit_units>=0?'pos':'neg'}>{fmtSign(b.profit_units)}u</span>
+              </span>
+            </div>
+            {(b.plays||[]).map((p,i)=>(
+              <div key={i} className={`play-row result-${(p.result||'').toLowerCase()}`}>
+                <span className="play-subject">{p.subject}</span>
+                <span className="play-line">{p.line}</span>
+                <span className="play-actual">{p.actual_value!=null?p.actual_value:'-'}</span>
+                <span className={`play-result res-${(p.result||'').toLowerCase()}`}>{p.result}</span>
+                <span className={`play-profit ${(p.profit_units||0)>=0?'pos':'neg'}`}>{fmtSign(p.profit_units||0)}u</span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>}
+    </div>
+  );
+}
+
+// ============================================================================
+// Slate / Games view (unchanged)
+// ============================================================================
+function GamesView({games,projections}){
+  if(!games||games.length===0)return <div className="empty">No games scheduled today.</div>;
+  const byGame={};
+  (projections||[]).forEach(p=>{if(!byGame[p.game_pk])byGame[p.game_pk]=[];byGame[p.game_pk].push(p);});
+  return (
+    <section>
+      <div className="section-header"><h2>Tonight's slate.</h2><span className="deck">Probables · projections · market line</span></div>
+      <div className="games">{games.map(g=><GameCard key={g.game_pk} game={g} projs={byGame[g.game_pk]||[]}/>)}</div>
+    </section>
+  );
+}
+function GameCard({game,projs}){
+  const flag=game.lean==='OVER'?'flagged-over':game.lean==='UNDER'?'flagged-under':'';
+  const awayProj=projs.find(p=>p.team_code===game.away_team);
+  const homeProj=projs.find(p=>p.team_code===game.home_team);
+  return (
+    <div className={`game-card ${flag}`}>
+      <div className="game-header">
+        <span className="matchup">
+          {game.away_team}{game.proj_away_runs!=null&&<span className="team-proj">{Number(game.proj_away_runs).toFixed(1)}</span>}
+          {' @ '}
+          {game.home_team}{game.proj_home_runs!=null&&<span className="team-proj">{Number(game.proj_home_runs).toFixed(1)}</span>}
+        </span>
+        <span className="time">{game.game_time_et}</span>
+      </div>
+      {[awayProj,homeProj].filter(Boolean).map(p=>(
+        <div key={p.mlb_id} className="pitcher-line">
+          <span className="name">{p.last_first?.split(',')[0]}</span>
+          <span className="sub">{p.team_code} · {p.hand}HP</span>
+          <span className="sub">PA {p.pa_sample}</span>
+          <span className="xera">xERA {Number(p.xera||0).toFixed(2)}</span>
+        </div>
+      ))}
+      <div className="game-totals">
+        <div className="stat"><div className="label">Market</div><div className="value">{game.market_total??'-'}</div></div>
+        <div className="stat"><div className="label">Proj</div><div className="value">{game.proj_total?Number(game.proj_total).toFixed(2):'-'}</div></div>
+        <div className="stat edge">
+          <div className="label">Edge</div>
+          <div className={`value ${(game.edge_total??0)>=0?'pos':'neg'}`}>
+            {game.edge_total?(game.edge_total>=0?'+':'')+Number(game.edge_total).toFixed(2):'-'}
+          </div>
+        </div>
+        {game.market_f5_total&&<div className="stat"><div className="label">F5 Line</div><div className="value">{game.market_f5_total}</div></div>}
+        {game.away_ml&&<div className="stat"><div className="label">ML</div><div className="value" style={{fontSize:'11px'}}>{fmtOdds(game.away_ml)}/{fmtOdds(game.home_ml)}</div></div>}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Track Record (unchanged)
+// ============================================================================
+function PerformanceView({perf}){
+  if(!perf||!perf.byDate||perf.byDate.length===0) return <div className="empty">No graded plays yet.</div>;
+  return (
+    <section>
+      <div className="section-header"><h2>Track record.</h2><span className="deck">Cumulative & daily</span></div>
+      {perf.overall&&<OverallCard overall={perf.overall}/>}
+      <div className="track-daily-stack">{perf.byDate.map(day=><DayCard key={day.run_date} day={day}/>)}</div>
+    </section>
+  );
+}
+function fmtSign(n){return n>=0?`+${n.toFixed(2)}`:n.toFixed(2);}
+function fmtRate(g){const d=g.wins+g.losses;return d>0?`${Math.round(g.wins/d*100)}%`:'—';}
+function OverallCard({overall}){
+  const rows=Array.isArray(overall)?overall:[overall];
+  return (
+    <div className="overall-card">
+      {rows.map(r=>(
+        <div key={r.window_days||'all'} className="overall-window">
+          <div className="ow-label">{r.window_days?`${r.window_days}d`:'All time'}</div>
+          <div className="ow-record">{r.wins}-{r.losses}{r.pushes>0?`-${r.pushes}`:''}</div>
+          <div className="ow-rate">{fmtRate(r)}</div>
+          <div className={`ow-roi ${r.roi>=0?'pos':'neg'}`}>{r.roi!=null?fmtSign(r.roi*100)+'%':'—'} ROI</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+function DayCard({day}){
+  const [open,setOpen]=useState(false);
   const plays=day.plays||[];
   const wins=plays.filter(p=>p.result==='WIN').length;
   const losses=plays.filter(p=>p.result==='LOSS').length;
