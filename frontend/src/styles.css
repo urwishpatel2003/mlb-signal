@@ -1026,310 +1026,221 @@ html, body {
   .day-summary { gap: 10px; }
 }
 
+
 /* ============================================================================
-   Track Record v3 - category blocks, OVER/UNDER buckets, click-to-expand plays
-   Append to existing styles.css
+   Track Record - DayCard v4 (buckets + plays)
    ============================================================================ */
 
-.cat-section {
+.day-card {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-left: 4px solid var(--ink);
+  padding: 0;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow-soft);
+  transition: transform 0.15s, box-shadow 0.15s;
+  cursor: pointer;
+}
+.day-card.pos { border-left-color: var(--moss); }
+.day-card.neg { border-left-color: var(--vermillion); }
+.day-card:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(26,24,20,0.08); }
+
+.day-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px;
+  gap: 12px;
+}
+
+.day-date {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  flex-shrink: 0;
+}
+
+.day-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.day-wl {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 20px;
+  color: var(--ink);
+}
+
+.day-rate {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.day-units {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 14px;
+}
+.day-units.pos { color: var(--moss); }
+.day-units.neg { color: var(--vermillion); }
+
+.day-toggle {
+  font-size: 11px;
+  color: var(--ink-3);
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.day-sections {
   border-top: 1px solid var(--rule);
-  padding-top: 14px;
-  margin-top: 14px;
+  padding: 0 18px 14px;
 }
 
-.cat-section:first-of-type {
-  border-top: none;
-  padding-top: 0;
-  margin-top: 0;
+.day-section {
+  border-top: 1px solid var(--rule);
+  padding: 10px 0 4px;
 }
+.day-section:first-child { border-top: none; }
 
-.cat-section-header {
+.day-section-header {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
-.cat-section-name {
+.section-name {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 10px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--ink);
+  color: var(--ink-3);
   font-weight: 700;
 }
 
-.cat-section-stats {
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--ink-2);
-  font-feature-settings: 'tnum';
-}
-
-.cat-section-stats .pos { color: var(--moss); font-weight: 700; }
-.cat-section-stats .neg { color: var(--vermillion); font-weight: 700; }
-
-.cat-blocks {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.cat-block {
-  background: var(--paper-2);
-  border: 1px solid var(--rule);
-  padding: 10px 12px;
-}
-
-.cat-block-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 8px;
-}
-
-.cat-block-name {
-  font-family: var(--display);
-  font-weight: 700;
-  font-size: 14px;
-  color: var(--ink);
-  letter-spacing: -0.01em;
-}
-
-.cat-block-stats {
+.section-stats {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--ink-2);
-  font-feature-settings: 'tnum';
 }
+.section-stats .pos { color: var(--moss); font-weight: 700; }
+.section-stats .neg { color: var(--vermillion); font-weight: 700; }
 
-.cat-block-stats .pos { color: var(--moss); font-weight: 700; }
-.cat-block-stats .neg { color: var(--vermillion); font-weight: 700; }
-
-.cat-block-buckets {
+/* Play rows */
+.play-row {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 6px;
-}
-
-/* -------------------------------- Buckets ----------------------------------- */
-
-.bucket {
-  border: 1px solid var(--rule);
-  background: var(--paper);
-  overflow: hidden;
-}
-
-.bucket-header {
-  width: 100%;
-  display: grid;
-  grid-template-columns: 70px 1fr 60px 70px 18px;
-  gap: 10px;
+  grid-template-columns: 1fr 48px 48px 52px 64px;
+  gap: 8px;
+  padding: 5px 8px;
   align-items: center;
-  padding: 8px 12px;
-  background: none;
-  border: none;
-  cursor: pointer;
   font-family: var(--mono);
-  font-size: 12px;
-  text-align: left;
-  color: var(--ink-2);
-  transition: background 0.1s;
-}
-
-.bucket-header:hover { background: rgba(196, 80, 43, 0.04); }
-
-.bucket-lean {
-  font-weight: 700;
   font-size: 11px;
-  letter-spacing: 0.06em;
-  text-align: center;
-  padding: 3px 0;
   border-radius: 2px;
-}
-
-.bucket-header.lean-OVER .bucket-lean {
-  color: var(--moss);
-  background: rgba(77, 107, 58, 0.1);
-}
-
-.bucket-header.lean-UNDER .bucket-lean {
-  color: var(--vermillion-deep);
-  background: rgba(196, 80, 43, 0.1);
-}
-
-.bucket-wl {
-  font-family: var(--display);
-  font-weight: 700;
-  font-size: 14px;
-  color: var(--ink);
-}
-
-.bucket-rate {
-  text-align: right;
-  font-feature-settings: 'tnum';
-}
-
-.bucket-units {
-  text-align: right;
-  font-weight: 700;
-  font-feature-settings: 'tnum';
-}
-
-.bucket-units.pos { color: var(--moss); }
-.bucket-units.neg { color: var(--vermillion); }
-
-.bucket-chev {
-  text-align: center;
-  color: var(--ink-3);
-  font-size: 14px;
-  transition: color 0.1s;
-}
-
-.bucket.open .bucket-chev { color: var(--vermillion); }
-.bucket.open .bucket-header { background: rgba(196, 80, 43, 0.04); }
-
-/* -------------------------------- Plays ------------------------------------- */
-
-.bucket-plays {
-  border-top: 1px solid var(--rule);
-  padding: 0;
-  background: var(--paper-2);
-}
-
-.play-thead,
-.play-row {
-  display: grid;
-  grid-template-columns: minmax(120px, 2fr) 60px 60px 60px 70px 70px;
-  gap: 10px;
-  padding: 8px 12px;
-  align-items: center;
-  font-family: var(--mono);
-  font-feature-settings: 'tnum';
-  font-size: 11px;
-}
-
-.play-thead {
-  background: var(--paper);
-  border-bottom: 1px solid var(--rule);
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-  font-weight: 700;
-}
-
-.play-thead .num { text-align: right; }
-
-.play-row {
-  border-bottom: 1px solid var(--rule);
   color: var(--ink-2);
 }
+.play-row:nth-child(even) { background: var(--paper-2); }
 
-.play-row:last-child { border-bottom: none; }
-.play-row:hover { background: rgba(196, 80, 43, 0.04); }
-
-.play-row .num { text-align: right; }
+.play-row.result-win  { border-left: 2px solid var(--moss); }
+.play-row.result-loss { border-left: 2px solid var(--vermillion); }
+.play-row.result-push { border-left: 2px solid var(--ink-3); }
 
 .play-subject {
   font-family: var(--display);
   font-weight: 600;
+  font-size: 12px;
   color: var(--ink);
-  font-size: 13px;
-  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.play-line, .play-actual {
+  text-align: right;
+  font-feature-settings: 'tnum';
+  color: var(--ink-3);
 }
 
 .play-result {
   text-align: center;
   font-weight: 700;
   font-size: 10px;
-  letter-spacing: 0.06em;
-  padding: 2px 0;
-  border-radius: 2px;
+  letter-spacing: 0.05em;
 }
+.res-win  { color: var(--moss); }
+.res-loss { color: var(--vermillion); }
+.res-push { color: var(--ink-3); }
 
-.play-result.res-win {
-  color: var(--moss);
-  background: rgba(77, 107, 58, 0.12);
+.play-profit {
+  text-align: right;
+  font-weight: 700;
+  font-feature-settings: 'tnum';
 }
-
-.play-result.res-loss {
-  color: var(--vermillion-deep);
-  background: rgba(196, 80, 43, 0.12);
-}
-
-.play-result.res-push {
-  color: var(--ink-3);
-  background: var(--paper-2);
-}
-
-.play-profit { font-weight: 700; }
 .play-profit.pos { color: var(--moss); }
 .play-profit.neg { color: var(--vermillion); }
 
-/* -------------------------------- Mobile ------------------------------------ */
+/* Overall card */
+.overall-card {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+.overall-window {
+  flex: 1;
+  min-width: 140px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-top: 3px solid var(--ink);
+  padding: 16px 18px;
+  box-shadow: var(--shadow-soft);
+}
+.ow-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 8px;
+}
+.ow-record {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 28px;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+.ow-rate {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink-2);
+  margin-bottom: 6px;
+}
+.ow-roi {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 14px;
+}
+.ow-roi.pos { color: var(--moss); }
+.ow-roi.neg { color: var(--vermillion); }
 
-@media (max-width: 700px) {
-  .bucket-header {
-    grid-template-columns: 60px 1fr 50px 60px 16px;
-    gap: 6px;
-    padding: 8px;
-    font-size: 11px;
-  }
-  .play-thead,
+@media (max-width: 640px) {
+  .day-header { padding: 12px 14px; }
+  .day-date { font-size: 14px; }
+  .day-wl { font-size: 16px; }
+  .day-sections { padding: 0 14px 12px; }
   .play-row {
-    grid-template-columns: minmax(100px, 1.5fr) 50px 50px 60px 60px;
-    gap: 6px;
-    padding: 6px 8px;
+    grid-template-columns: 1fr 40px 48px 56px;
     font-size: 10px;
   }
-  /* Hide the Proj column on phone - keeps the row narrow */
-  .play-thead > :nth-child(3),
-  .play-row > :nth-child(3) {
-    display: none;
-  }
-}
-/* ===== Pitcher props category tabs ===== */
-.prop-cat-tabs {
-  display: flex;
-  gap: 8px;
-  margin: 12px 0 16px 0;
-  flex-wrap: wrap;
-}
-
-.prop-cat-tab {
-  padding: 6px 14px;
-  border: 1px solid #2a2a2a;
-  background: transparent;
-  color: #888;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 13px;
-  font-family: inherit;
-  transition: all 0.15s;
-}
-
-.prop-cat-tab:hover {
-  border-color: #444;
-  color: #ccc;
-}
-
-.prop-cat-tab.active {
-  border-color: #5a8;
-  background: #1a2a22;
-  color: #5a8;
-  font-weight: 500;
-}
-
-/* Inline per-team projection next to team codes */
-.matchup .team-proj {
-  display: inline-block;
-  margin: 0 6px;
-  padding: 1px 6px;
-  background: #1a1a1a;
-  color: #aaa;
-  font-size: 12px;
-  font-weight: 500;
-  border-radius: 3px;
-  vertical-align: middle;
+  .play-actual { display: none; }
+  .overall-window { min-width: 100px; }
+  .ow-record { font-size: 22px; }
 }
