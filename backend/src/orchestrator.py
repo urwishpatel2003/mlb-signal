@@ -177,11 +177,12 @@ def compute_edges_for_game(*, game_pk: int, game: dict,
     for p in (away_proj, home_proj):
         if p.source != "statcast":
             continue   # never surface props on fallback projections
-        # DK first, fall back to regressed estimate per market
-        lines = estimate_book_lines(p)
+        # Only use REAL DK lines - no hardcoded fallbacks. If DK doesn't have a
+        # market for this pitcher, we skip generating an edge for that market.
         dk_pitcher = odds_props.lookup_lines(p.last_first, _DK_LINES) if _DK_LINES else None
-        if dk_pitcher:
-            lines.update(dk_pitcher)  # DK overrides estimate where data is available
+        if not dk_pitcher:
+            continue   # No real DK lines for this pitcher - skip entirely
+        lines = dk_pitcher
         proj_vals = {"K": p.k, "Hits": p.hits, "ER": p.er, "Outs": p.outs}
         for stat, line in lines.items():
             if stat == "BB":
