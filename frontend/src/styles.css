@@ -757,7 +757,7 @@ html, body {
 }
 
 /* ============================================================================
-   Track Record v5 — overall card, day cards, play rows
+   Track Record v7 — bigger labels, clear hierarchy
    ============================================================================ */
 
 /* Overall card */
@@ -769,27 +769,26 @@ html, body {
   margin-bottom: 28px;
   box-shadow: var(--shadow-soft);
 }
-.tr-overall-top {
-  margin-bottom: 20px;
-}
 .tr-overall-label {
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.12em;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-3);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 .tr-headline {
   display: flex;
   align-items: baseline;
-  gap: 16px;
+  gap: 18px;
   flex-wrap: wrap;
+  margin-bottom: 24px;
 }
 .tr-record {
   font-family: var(--display);
   font-weight: 800;
-  font-size: 48px;
+  font-size: 52px;
   letter-spacing: -0.03em;
   color: var(--ink);
   line-height: 1;
@@ -798,102 +797,104 @@ html, body {
   font-family: var(--display);
   font-style: italic;
   font-weight: 600;
-  font-size: 24px;
+  font-size: 28px;
   color: var(--ink-2);
 }
 .tr-profit {
   font-family: var(--mono);
   font-weight: 700;
-  font-size: 20px;
+  font-size: 22px;
   font-feature-settings: 'tnum';
 }
 .tr-profit.pos { color: var(--moss); }
 .tr-profit.neg { color: var(--vermillion); }
 
+/* Split tiles (Game Totals / Pitcher Props) */
 .tr-split {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: 14px;
+  margin-bottom: 20px;
 }
 .tr-split-tile {
   background: var(--paper-2);
   border: 1px solid var(--rule);
-  padding: 14px 16px;
+  padding: 16px 18px;
 }
 .tr-split-label {
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.1em;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--ink-3);
-  margin-bottom: 6px;
+  color: var(--ink-2);
+  margin-bottom: 8px;
 }
 .tr-split-record {
   font-family: var(--display);
   font-weight: 800;
-  font-size: 26px;
+  font-size: 30px;
   color: var(--ink);
   letter-spacing: -0.02em;
+  margin-bottom: 2px;
 }
 .tr-split-rate {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ink-3);
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 .tr-split-profit {
   font-family: var(--mono);
   font-weight: 700;
-  font-size: 14px;
+  font-size: 15px;
   font-feature-settings: 'tnum';
 }
 .tr-split-profit.pos { color: var(--moss); }
 .tr-split-profit.neg { color: var(--vermillion); }
 
+/* Prop breakdown tiles (K, Hits, ER, Outs) */
 .tr-prop-breakdown {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
   border-top: 1px solid var(--rule);
-  padding-top: 16px;
+  padding-top: 18px;
 }
 .tr-prop-tile {
   flex: 1;
   min-width: 80px;
   background: var(--paper-2);
   border: 1px solid var(--rule);
-  padding: 10px 12px;
+  padding: 12px 14px;
   text-align: center;
 }
 .tr-prop-cat {
   font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.1em;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--ink-3);
-  margin-bottom: 4px;
+  color: var(--ink-2);
+  margin-bottom: 6px;
 }
 .tr-prop-record {
   font-family: var(--display);
-  font-weight: 700;
-  font-size: 18px;
+  font-weight: 800;
+  font-size: 22px;
   color: var(--ink);
+  margin-bottom: 2px;
 }
 .tr-prop-profit {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 .tr-prop-profit.pos { color: var(--moss); }
 .tr-prop-profit.neg { color: var(--vermillion); }
 
 /* Daily stack */
-.track-daily-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
+.track-daily-stack { display: flex; flex-direction: column; gap: 10px; }
 
 /* Day card */
 .day-card {
@@ -901,11 +902,9 @@ html, body {
   border: 1px solid var(--rule);
   border-left: 4px solid var(--ink-3);
   box-shadow: var(--shadow-soft);
-  transition: box-shadow 0.15s;
 }
 .day-card.pos { border-left-color: var(--moss); }
 .day-card.neg { border-left-color: var(--vermillion); }
-.day-card:hover { box-shadow: 0 4px 16px rgba(26,24,20,0.1); }
 
 .day-header {
   display: flex;
@@ -918,7 +917,7 @@ html, body {
 .day-date {
   font-family: var(--display);
   font-weight: 700;
-  font-size: 16px;
+  font-size: 17px;
   color: var(--ink);
   flex-shrink: 0;
 }
@@ -932,89 +931,126 @@ html, body {
 .day-wl {
   font-family: var(--display);
   font-weight: 800;
-  font-size: 22px;
+  font-size: 24px;
   letter-spacing: -0.02em;
   color: var(--ink);
 }
 .day-rate {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ink-3);
 }
 .day-units {
   font-family: var(--mono);
   font-weight: 700;
-  font-size: 14px;
+  font-size: 15px;
   font-feature-settings: 'tnum';
 }
 .day-units.pos { color: var(--moss); }
 .day-units.neg { color: var(--vermillion); }
-.day-toggle {
-  font-size: 11px;
-  color: var(--ink-3);
-  flex-shrink: 0;
-}
+.day-toggle  { font-size: 11px; color: var(--ink-3); flex-shrink: 0; }
+.bucket-toggle { font-size: 10px; color: var(--ink-3); margin-left: 8px; }
 
-/* Day body */
-.day-body {
-  border-top: 1px solid var(--rule);
-}
-.day-group {
-  padding: 0 20px 16px;
-}
-.day-group + .day-group {
-  border-top: 1px solid var(--rule);
-  padding-top: 4px;
-}
-.day-group-label {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-  font-weight: 700;
-  padding: 12px 0 8px;
-}
+.day-body { border-top: 1px solid var(--rule); }
 
-/* Buckets */
-.day-bucket {
-  margin-bottom: 12px;
-}
-.day-bucket:last-child { margin-bottom: 0; }
-.day-bucket-header {
+/* Group level: GAME TOTALS / PITCHER PROPS */
+.day-group-block { border-bottom: 1px solid var(--rule); }
+.day-group-block:last-child { border-bottom: none; }
+.day-group-header {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
-  padding: 6px 0 4px;
-  border-bottom: 1px solid var(--rule);
-  margin-bottom: 2px;
+  align-items: center;
+  padding: 12px 20px;
+  cursor: pointer;
+  background: var(--paper-2);
+  user-select: none;
 }
-.bucket-name {
-  font-family: var(--display);
+.day-group-header:hover { background: rgba(26,24,20,0.05); }
+.day-group-name {
+  font-family: var(--mono);
+  font-size: 12px;
   font-weight: 700;
-  font-size: 13px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: var(--ink);
 }
-.bucket-stats {
+.day-group-stats {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-2);
+  font-feature-settings: 'tnum';
+}
+.day-group-body { padding: 4px 0; }
+
+/* Prop category level: K / HITS / ER / OUTS */
+.prop-cat-block { border-bottom: 1px solid var(--rule); }
+.prop-cat-block:last-child { border-bottom: none; }
+.prop-cat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 20px 10px 34px;
+  cursor: pointer;
+  user-select: none;
+}
+.prop-cat-header:hover { background: rgba(26,24,20,0.03); }
+.prop-cat-name {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--ink);
+}
+.prop-cat-stats {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-2);
+  font-feature-settings: 'tnum';
+}
+.prop-cat-body { padding: 2px 0; }
+
+/* Bucket level: OVER / UNDER */
+.bucket-block { border-bottom: 1px solid var(--rule); }
+.bucket-block:last-child { border-bottom: none; }
+.bucket-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 20px 8px 48px;
+  cursor: pointer;
+  user-select: none;
+}
+.bucket-block-header:hover { background: rgba(26,24,20,0.03); }
+.bucket-block-name {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.bucket-block-stats {
+  display: flex;
+  gap: 12px;
+  align-items: center;
   font-family: var(--mono);
   font-size: 11px;
   color: var(--ink-2);
+  font-feature-settings: 'tnum';
 }
-.bucket-lean-label {
-  font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-  padding: 4px 0 2px;
-}
+.bucket-plays { padding: 2px 0 6px; }
 
 /* Play rows */
 .play-row {
   display: grid;
-  grid-template-columns: 1fr 80px 70px 52px 64px;
+  grid-template-columns: 1fr 58px 58px 52px 68px;
   gap: 6px;
-  padding: 5px 8px;
+  padding: 5px 20px 5px 60px;
   align-items: center;
   font-family: var(--mono);
   font-size: 11px;
@@ -1045,12 +1081,11 @@ html, body {
   text-align: center;
   font-weight: 700;
   font-size: 10px;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
 }
 .res-win  { color: var(--moss); }
 .res-loss { color: var(--vermillion); }
 .res-push { color: var(--ink-3); }
-
 .play-profit {
   text-align: right;
   font-weight: 700;
@@ -1062,13 +1097,18 @@ html, body {
 /* Responsive */
 @media (max-width: 640px) {
   .tr-overall { padding: 16px; }
-  .tr-record { font-size: 36px; }
-  .tr-rate { font-size: 18px; }
+  .tr-record { font-size: 40px; }
+  .tr-rate { font-size: 22px; }
   .tr-split { grid-template-columns: 1fr 1fr; }
+  .tr-split-record { font-size: 24px; }
   .day-header { padding: 12px 14px; }
-  .day-group { padding: 0 14px 12px; }
+  .day-wl { font-size: 20px; }
+  .day-group-header { padding: 10px 14px; }
+  .prop-cat-header { padding: 9px 14px 9px 26px; }
+  .bucket-block-header { padding: 7px 14px 7px 36px; }
   .play-row {
-    grid-template-columns: 1fr 60px 48px 60px;
+    grid-template-columns: 1fr 46px 46px 64px;
+    padding: 5px 14px 5px 44px;
     font-size: 10px;
   }
   .play-actual { display: none; }
