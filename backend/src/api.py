@@ -100,7 +100,7 @@ def _slate_for_date(slate_date: str) -> dict:
         SELECT g.*, gp.proj_total, gp.proj_f5, gp.proj_home_runs, gp.proj_away_runs, gp.edge_total, gp.lean, gp.market_f5_total, gp.away_ml, gp.home_ml, gp.home_win_prob, gp.away_win_prob, gp.ml_edge_team
         FROM games g
         LEFT JOIN LATERAL (
-            SELECT proj_total, proj_f5, proj_home_runs, proj_away_runs, edge_total, lean, 'SENTINEL_CHECK' AS sentinel_test
+            SELECT proj_total, proj_f5, proj_home_runs, proj_away_runs, edge_total, lean, market_f5_total, away_ml, home_ml, home_win_prob, away_win_prob, ml_edge_team, ml_edge_pct, edge_f5, lean_f5, hfa_applied
             FROM game_projections gp_inner
             JOIN projection_runs pr ON pr.run_id = gp_inner.run_id
             WHERE gp_inner.game_pk = g.game_pk AND pr.run_date = %s
@@ -564,5 +564,6 @@ def scheduler_status(token: str):
         return {"ok": True, "jobs": jobs}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
 
 
