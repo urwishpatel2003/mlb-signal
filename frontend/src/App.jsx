@@ -473,78 +473,150 @@ function GameCard({game,projs}){
 // ============================================================================
 function PerformanceView({perf}){
   if(!perf||!perf.byDate||perf.byDate.length===0) return <div className="empty">No graded plays yet.</div>;
+  const ov=perf.overall||{};
+  const summary=ov.overall||{};
+  const byCategory=ov.by_category||[];
   return (
     <section>
-      <div className="section-header"><h2>Track record.</h2><span className="deck">Cumulative & daily</span></div>
-      {perf.overall&&<OverallCard overall={perf.overall}/>}
+      <div className="section-header"><h2>Track record.</h2><span className="deck">Cumulative &amp; daily</span></div>
+      <OverallCard summary={summary} byCategory={byCategory}/>
       <div className="track-daily-stack">{perf.byDate.map(day=><DayCard key={day.run_date} day={day}/>)}</div>
     </section>
   );
 }
-function fmtSign(n){return n>=0?`+${n.toFixed(2)}`:n.toFixed(2);}
-function fmtRate(g){const d=g.wins+g.losses;return d>0?`${Math.round(g.wins/d*100)}%`:'—';}
-function OverallCard({overall}){
-  const rows=Array.isArray(overall)?overall:[overall];
+
+function fmtSign(n){return n>=0?'+'+n.toFixed(2):n.toFixed(2);}
+function fmtRate(w,l){const d=w+l;return d>0?Math.round(w/d*100)+'%':'--';}
+
+function OverallCard({summary, byCategory}){
+  const w=summary.wins||0, l=summary.losses||0, p=summary.pushes||0;
+  const profit=summary.profit_units||0;
+  const totals=byCategory.filter(r=>r.kind==='total');
+  const props=byCategory.filter(r=>r.kind==='prop');
+  const totW=totals.reduce((s,r)=>s+(r.wins||0),0);
+  const totL=totals.reduce((s,r)=>s+(r.losses||0),0);
+  const totProfit=totals.reduce((s,r)=>s+(r.profit_units||0),0);
+  const prpW=props.reduce((s,r)=>s+(r.wins||0),0);
+  const prpL=props.reduce((s,r)=>s+(r.losses||0),0);
+  const prpProfit=props.reduce((s,r)=>s+(r.profit_units||0),0);
   return (
-    <div className="overall-card">
-      {rows.map(r=>(
-        <div key={r.window_days||'all'} className="overall-window">
-          <div className="ow-label">{r.window_days?`${r.window_days}d`:'All time'}</div>
-          <div className="ow-record">{r.wins}-{r.losses}{r.pushes>0?`-${r.pushes}`:''}</div>
-          <div className="ow-rate">{fmtRate(r)}</div>
-          <div className={`ow-roi ${r.roi>=0?'pos':'neg'}`}>{r.roi!=null?fmtSign(r.roi*100)+'%':'—'} ROI</div>
+    <div className="tr-overall">
+      <div className="tr-overall-top">
+        <div className="tr-headline">
+          <span className="tr-record">{w}-{l}{p>0?'-'+p:''}</span>
+          <span className="tr-rate">{fmtRate(w,l)}</span>
+          <span className={'tr-profit '+(profit>=0?'pos':'neg')}>{fmtSign(profit)}u</span>
         </div>
-      ))}
+        <div className="tr-overall-label">ALL-TIME RECORD</div>
+      </div>
+      <div className="tr-split">
+        <div className="tr-split-tile">
+          <div className="tr-split-label">Game Totals</div>
+          <div className="tr-split-record">{totW}-{totL}</div>
+          <div className="tr-split-rate">{fmtRate(totW,totL)}</div>
+          <div className={'tr-split-profit '+(totProfit>=0?'pos':'neg')}>{fmtSign(totProfit)}u</div>
+        </div>
+        <div className="tr-split-tile">
+          <div className="tr-split-label">Pitcher Props</div>
+          <div className="tr-split-record">{prpW}-{prpL}</div>
+          <div className="tr-split-rate">{fmtRate(prpW,prpL)}</div>
+          <div className={'tr-split-profit '+(prpProfit>=0?'pos':'neg')}>{fmtSign(prpProfit)}u</div>
+        </div>
+      </div>
+      {props.length>0&&(
+        <div className="tr-prop-breakdown">
+          {props.map(r=>(
+            <div key={r.category} className="tr-prop-tile">
+              <div className="tr-prop-cat">{r.category}</div>
+              <div className="tr-prop-record">{r.wins}-{r.losses}</div>
+              <div className={'tr-prop-profit '+(r.profit_units>=0?'pos':'neg')}>{fmtSign(r.profit_units)}u</div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
+
 function DayCard({day}){
   const [open,setOpen]=useState(false);
   const s=day.summary||{};
-  const wins=s.wins||0;
-  const losses=s.losses||0;
-  const pushes=s.pushes||0;
+  const w=s.wins||0, l=s.losses||0, p=s.pushes||0;
   const profit=s.profit_units||0;
   const buckets=day.buckets||[];
-  const rate=wins+losses>0?Math.round(wins/(wins+losses)*100):0;
-  const pushStr=pushes>0?('-'+pushes):'';
+  const totalBuckets=buckets.filter(b=>b.kind==='total');
+  const propBuckets=buckets.filter(b=>b.kind==='prop');
+  const propCats=[...new Set(propBuckets.map(b=>b.category))];
+  const pushStr=p>0?'-'+p:'';
   return (
-    <div className={profit>=0?'day-card pos':'day-card neg'}>
+    <div className={'day-card '+(profit>=0?'pos':'neg')}>
       <div className="day-header" onClick={()=>setOpen(!open)}>
         <span className="day-date">{day.run_date}</span>
         <div className="day-summary">
-          <span className="day-wl">{wins}-{losses}{pushStr}</span>
-          <span className="day-rate">{rate}%</span>
-          <span className={profit>=0?'day-units pos':'day-units neg'}>{fmtSign(profit)}u</span>
+          <span className="day-wl">{w}-{l}{pushStr}</span>
+          <span className="day-rate">{fmtRate(w,l)}</span>
+          <span className={'day-units '+(profit>=0?'pos':'neg')}>{fmtSign(profit)}u</span>
         </div>
         <span className="day-toggle">{open?'▲':'▼'}</span>
       </div>
-      {open&&<div className="day-sections">
-        {buckets.map((b,bi)=>{
-          const bPush=b.pushes>0?('-'+b.pushes):'';
-          return (
-            <div key={bi} className="day-section">
-              <div className="day-section-header">
-                <span className="section-name">{b.category} {b.lean}</span>
-                <span className="section-stats">
-                  {b.wins}-{b.losses}{bPush}&nbsp;
-                  <span className={b.profit_units>=0?'pos':'neg'}>{fmtSign(b.profit_units)}u</span>
-                </span>
-              </div>
-              {(b.plays||[]).map((p,i)=>(
-                <div key={i} className={'play-row result-'+(p.result||'').toLowerCase()}>
-                  <span className="play-subject">{p.subject}</span>
-                  <span className="play-line">{p.line}</span>
-                  <span className="play-actual">{p.actual_value!=null?p.actual_value:'-'}</span>
-                  <span className={'play-result res-'+(p.result||'').toLowerCase()}>{p.result}</span>
-                  <span className={(p.profit_units||0)>=0?'play-profit pos':'play-profit neg'}>{fmtSign(p.profit_units||0)}u</span>
+      {open&&(
+        <div className="day-body">
+          {totalBuckets.length>0&&(
+            <div className="day-group">
+              <div className="day-group-label">Game Totals</div>
+              {totalBuckets.map((b,bi)=>(
+                <div key={bi} className="day-bucket">
+                  <div className="day-bucket-header">
+                    <span className="bucket-name">{b.lean}</span>
+                    <span className="bucket-stats">{b.wins}-{b.losses}{b.pushes>0?'-'+b.pushes:''} <span className={b.profit_units>=0?'pos':'neg'}>{fmtSign(b.profit_units)}u</span></span>
+                  </div>
+                  {(b.plays||[]).map((play,i)=><PlayRow key={i} play={play}/>)}
                 </div>
               ))}
             </div>
-          );
-        })}
-      </div>}
+          )}
+          {propCats.length>0&&(
+            <div className="day-group">
+              <div className="day-group-label">Pitcher Props</div>
+              {propCats.map(cat=>{
+                const catBuckets=propBuckets.filter(b=>b.category===cat);
+                const catW=catBuckets.reduce((s,b)=>s+(b.wins||0),0);
+                const catL=catBuckets.reduce((s,b)=>s+(b.losses||0),0);
+                const catP=catBuckets.reduce((s,b)=>s+(b.profit_units||0),0);
+                return (
+                  <div key={cat} className="day-bucket">
+                    <div className="day-bucket-header">
+                      <span className="bucket-name">{cat}</span>
+                      <span className="bucket-stats">{catW}-{catL} <span className={catP>=0?'pos':'neg'}>{fmtSign(catP)}u</span></span>
+                    </div>
+                    {catBuckets.map((b,bi)=>(
+                      <div key={bi}>
+                        <div className="bucket-lean-label">{b.lean}</div>
+                        {(b.plays||[]).map((play,i)=><PlayRow key={i} play={play}/>)}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
+
+function PlayRow({play}){
+  const res=(play.result||'').toLowerCase();
+  return (
+    <div className={'play-row result-'+res}>
+      <span className="play-subject">{play.subject}</span>
+      <span className="play-line">Line: {play.line}</span>
+      <span className="play-actual">Act: {play.actual_value!=null?play.actual_value:'-'}</span>
+      <span className={'play-result res-'+res}>{play.result}</span>
+      <span className={(play.profit_units||0)>=0?'play-profit pos':'play-profit neg'}>{fmtSign(play.profit_units||0)}u</span>
+    </div>
+  );
+}
+
 
