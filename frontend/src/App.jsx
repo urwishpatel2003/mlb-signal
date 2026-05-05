@@ -524,3 +524,4 @@ function DayCard({day}){
     </div>
   );
 }
+
