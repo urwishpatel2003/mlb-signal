@@ -1113,3 +1113,163 @@ html, body {
   }
   .play-actual { display: none; }
 }
+
+/* ============================================================================
+   Pitcher Props — category tab buttons (K / Hits / ER / Outs)
+   ============================================================================ */
+
+.prop-cat-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.prop-cat-tab {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 7px 14px;
+  border: 1px solid var(--rule);
+  background: var(--paper-2);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+
+.prop-cat-tab:hover {
+  background: var(--paper);
+  color: var(--ink);
+  border-color: var(--ink-3);
+}
+
+.prop-cat-tab.active {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+
+/* ============================================================================
+   Moneyline table
+   ============================================================================ */
+
+.ml-table {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.ml-thead,
+.ml-row {
+  display: grid;
+  grid-template-columns:
+    minmax(160px, 1.8fr)   /* Matchup */
+    100px                   /* Pick */
+    80px                    /* Odds */
+    90px                    /* Model Win% */
+    80px                    /* Implied */
+    80px                    /* Edge */
+    60px;                   /* Tier */
+  gap: 0 12px;
+  padding: 10px 16px;
+  align-items: center;
+}
+
+.ml-thead {
+  background: var(--paper-2);
+  border-bottom: 2px solid var(--ink);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  font-weight: 700;
+}
+
+.ml-thead .num { text-align: right; }
+
+.ml-row {
+  border-bottom: 1px solid var(--rule);
+  font-size: 13px;
+  transition: background 0.1s;
+}
+
+.ml-row:last-child { border-bottom: none; }
+.ml-row:hover { background: var(--paper-2); }
+
+.ml-row .cell-num {
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-feature-settings: 'tnum';
+  color: var(--ink-2);
+}
+
+.ml-row .cell-pick {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+  padding: 4px 8px;
+  border-radius: 2px;
+  text-align: center;
+}
+
+.ml-row .cell-pick.lean-OVER {
+  color: var(--moss);
+  background: rgba(77, 107, 58, 0.10);
+}
+
+.ml-row .cell-pick.lean-UNDER {
+  color: var(--vermillion);
+  background: rgba(196, 80, 43, 0.10);
+}
+
+/* ML pick for non-OVER/UNDER (team name) */
+.ml-row .cell-pick:not(.lean-OVER):not(.lean-UNDER) {
+  color: var(--ink);
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+}
+
+.ml-disclaimer {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-3);
+  margin-top: 12px;
+  line-height: 1.5;
+}
+
+.tier-pill {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 2px 5px;
+  border: 1px solid var(--rule);
+  color: var(--ink-3);
+  border-radius: 2px;
+  vertical-align: middle;
+}
+
+@media (max-width: 640px) {
+  .prop-cat-tabs { gap: 6px; }
+  .prop-cat-tab { font-size: 10px; padding: 6px 10px; }
+
+  .ml-thead { display: none; }
+  .ml-row {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "subject pick"
+      "odds    edge"
+      "model   tier";
+    gap: 4px 8px;
+    padding: 12px 14px;
+  }
+  .ml-row .cell-num:nth-child(4) { display: none; } /* hide implied on mobile */
+}
