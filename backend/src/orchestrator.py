@@ -28,6 +28,9 @@ Failure modes:
     flagged on relative magnitude)
   - Statcast row missing: pitcher gets `low_sample` or `league_avg` source,
     flagged in the projection row, ntfy notes count of fallbacks
+
+v3.0: loads hitter_splits and stitches into all_hit so per-hitter L/R platoon
+      multipliers are available to projections.opp_lineup_xwoba() (Improvement #6).
 """
 from __future__ import annotations
 import argparse
@@ -47,8 +50,8 @@ from .park_factors import get_park_for_team
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("orchestrator")
 
-MODEL_VERSION = "v2.0"  # reset for the new architecture
-_DK_LINES: dict = {}  # Cache DK pitcher prop lines for the duration of one run
+MODEL_VERSION = "v3.0"
+_DK_LINES: dict = {}
 
 
 # ---------- Edge calculation ----------
@@ -85,11 +88,10 @@ EDGE_THRESHOLDS = {
     "Outs": 0.70,
 }
 
-# Tier rules (confidence tiers based on data quality + edge magnitude)
+
 def confidence_tier(edge: dict, proj: Optional[projections.PitcherProjection] = None) -> int:
-    """1 = highest, 3 = lowest. None for non-flagged."""
+    """1 = highest, 3 = lowest."""
     abs_edge = abs(edge["edge"])
-    # Disqualifiers - anything keyed off low_sample / league_avg drops to tier 3
     if proj and proj.source != "statcast":
         return 3
     if edge.get("category") == "Total":
@@ -98,7 +100,6 @@ def confidence_tier(edge: dict, proj: Optional[projections.PitcherProjection] = 
         if abs_edge >= 1.0:
             return 2
         return 3
-    # Props
     if abs_edge >= 2.0:
         return 1
     if abs_edge >= 1.0:
@@ -112,23 +113,12 @@ def half(x: float) -> float:
 
 def estimate_book_lines(p: projections.PitcherProjection,
                          live_lines: Optional[dict] = None) -> dict:
-    """
-    Use live odds when available, else estimate. Real book lines for K/H/ER/Outs
-    by pitcher are queryable from The Odds API's player props endpoint, but
-    require explicit subscription tier - we'll wire that in later. For now,
-    ERA-anchored estimates per the established methodology.
-    """
     if live_lines:
         return live_lines
-
-    # Books regress prop lines toward league baselines. Even on a pitcher with
-    # 0.38 ERA, the ER line will be 1.5 (the realistic floor for a 5+ IP start).
-    # We blend xERA-weighted "true ERA" toward 4.30 league average to match.
     surface_era = p.true_era if p.true_era is not None else (p.era if p.era is not None else 4.30)
     regressed_era = 0.4 * surface_era + 0.6 * 4.30
     market_er = regressed_era * (5.5 / 9)
     er_line = max(1.5, min(3.5, half(market_er)))
-    # K line scales mildly with K%; default 5.0-5.5 range
     k_line = max(3.5, min(7.5, half((8.5 / 9) * 5.5)))
     return {
         "K":    k_line,
@@ -176,35 +166,34 @@ def compute_edges_for_game(*, game_pk: int, game: dict,
     # ---- Pitcher props ----
     for p in (away_proj, home_proj):
         if p.source != "statcast":
-            continue   # never surface props on fallback projections
-        # Only use REAL DK lines - no hardcoded fallbacks. If DK doesn't have a
-        # market for this pitcher, we skip generating an edge for that market.
-        dk_pitcher = odds_props.lookup_lines(p.last_first, _DK_LINES) if _DK_LINES else None
-        if not dk_pitcher:
-            continue   # No real DK lines for this pitcher - skip entirely
-        lines = dk_pitcher
-        proj_vals = {"K": p.k, "Hits": p.hits, "ER": p.er, "Outs": p.outs}
-        for stat, line in lines.items():
-            if stat == "BB":
+            continue
+        live_lines = _DK_LINES.get(p.pitcher_mlb_id)
+        if not live_lines:
+            continue
+        book_lines = estimate_book_lines(p, live_lines)
+        for category, line in book_lines.items():
+            proj_val = getattr(p, category.lower(), None)
+            if proj_val is None:
                 continue
-            diff = proj_vals[stat] - line
-            if abs(diff) < EDGE_THRESHOLDS.get(stat, 0.7):
+            diff = proj_val - line
+            threshold = EDGE_THRESHOLDS.get(category, 0.5)
+            if abs(diff) < threshold:
                 continue
-            prop_lean = "OVER" if diff > 0 else "UNDER"
-            prop_conviction = poisson_tail_prob(proj_vals[stat], float(line), prop_lean)
+            lean = "OVER" if diff > 0 else "UNDER"
+            conviction = poisson_tail_prob(proj_val, float(line), lean)
             edges.append({
                 "game_pk": game_pk,
                 "kind": "prop",
-                "category": stat,
+                "category": category,
                 "pitcher_mlb_id": p.pitcher_mlb_id,
                 "pitcher_name": p.last_first,
                 "team_code": p.team_code,
                 "opp_team_code": p.opp_team_code,
                 "line": float(line),
-                "proj_value": round(proj_vals[stat], 2),
+                "proj_value": round(proj_val, 2),
                 "edge": round(diff, 2),
-                "lean": prop_lean,
-                "conviction_pct": round(prop_conviction * 100, 1),
+                "lean": lean,
+                "conviction_pct": round(conviction * 100, 1),
                 "flagged": True,
                 "notes": None,
             })
@@ -212,21 +201,37 @@ def compute_edges_for_game(*, game_pk: int, game: dict,
     return edges
 
 
-# ---------- Persistence helpers ----------
+# ---------- Game persistence ----------
 
 def persist_game(g: mlb_api.Game) -> None:
-    park_code = get_park_for_team(g.home_team)
-    weather = enrich_weather_for_game(g)  # NWS lookup if outdoor
+    weather = {}
+    if g.weather:
+        from .weather import parse_wind
+        mph, deg = parse_wind(g.weather.wind or "")
+        weather = {
+            "condition": g.weather.condition,
+            "temp_f": g.weather.temp_f,
+            "wind_raw": g.weather.wind,
+            "wind_mph": mph,
+            "wind_deg": deg,
+            "precip_pct": None,
+        }
+    else:
+        try:
+            weather = enrich_weather_for_game(g)
+        except Exception as e:
+            log.debug("Weather enrichment failed for %s: %s", g.game_pk, e)
+
     db.upsert_game({
         "game_pk": g.game_pk,
-        "game_date": g.game_date_et,
+        "game_date": g.game_date_et.isoformat() if g.game_date_et else None,
         "game_time_et": g.game_time_et,
         "status": g.status,
         "away_team": g.away_team,
         "home_team": g.home_team,
         "away_record": g.away_record,
         "home_record": g.home_record,
-        "park_code": park_code,
+        "park_code": get_park_for_team(g.home_team),
         "away_pitcher_id": g.away_pitcher.mlb_id if g.away_pitcher else None,
         "home_pitcher_id": g.home_pitcher.mlb_id if g.home_pitcher else None,
         "away_pitcher_hand": g.away_pitcher.hand if g.away_pitcher else None,
@@ -243,7 +248,6 @@ def persist_game(g: mlb_api.Game) -> None:
         "weather_precip_pct": weather.get("precip_pct"),
     })
 
-    # Lineups
     if g.away_lineup:
         db.replace_lineups(g.game_pk, g.away_team, [
             {"batting_order": s.order, "mlb_id": s.mlb_id,
@@ -274,17 +278,14 @@ def run(trigger: str = "manual") -> dict:
         metrics["n_games"] = len(active)
         log.info("%d active games (of %d total)", len(active), len(games))
 
-        # Persist games + lineups
         for g in active:
             persist_game(g)
 
-        # Attach odds
         try:
             attach_odds_to_games(active)
         except Exception as e:
-            log.warning("Odds attach failed (suppressed for compile): %s", e)
-            pass
-        # Fetch DK pitcher prop lines once per run (best-effort, falls back silently)
+            log.warning("Odds attach failed (suppressed): %s", e)
+
         global _DK_LINES
         try:
             _DK_LINES = odds_props.fetch_pitcher_props_for_today()
@@ -292,19 +293,39 @@ def run(trigger: str = "manual") -> dict:
             log.warning("DK pitcher props fetch failed (non-fatal): %s", e)
             _DK_LINES = {}
 
-        # Project each game
-        run_id = db.create_projection_run(run_date, MODEL_VERSION, trigger,
-                                           len(active))
+        run_id = db.create_projection_run(run_date, MODEL_VERSION, trigger, len(active))
         metrics["run_id"] = run_id
 
-        # Cache hitter xStats + team xwOBA lookups for the whole slate at once
+        # ---- Cache all xStats for the full slate ----
         season = date.today().year
         all_pit = {r["mlb_id"]: r for r in db.fetchall(
             "SELECT * FROM pitcher_xstats WHERE season_year = %s", (season,)
         )}
+
+        # v3.0: load hitter xStats then stitch in L/R splits as nested dict
         all_hit = {r["mlb_id"]: r for r in db.fetchall(
             "SELECT * FROM hitter_xstats WHERE season_year = %s", (season,)
         )}
+        split_rows = db.fetchall(
+            "SELECT mlb_id, vs_hand, pa, est_woba FROM hitter_splits WHERE season_year = %s",
+            (season,)
+        )
+        for sr in split_rows:
+            hitter_row = all_hit.get(sr["mlb_id"])
+            if hitter_row is None:
+                continue
+            if "splits" not in hitter_row:
+                hitter_row["splits"] = {}
+            hitter_row["splits"][sr["vs_hand"]] = {
+                "pa":       sr["pa"],
+                "est_woba": sr["est_woba"],
+            }
+        log.info(
+            "Loaded %d hitter xStats rows, %d with L/R splits",
+            len(all_hit),
+            sum(1 for r in all_hit.values() if "splits" in r),
+        )
+
         all_team = {r["team_code"]: r for r in db.fetchall(
             "SELECT * FROM team_xstats WHERE season_year = %s", (season,)
         )}
@@ -315,6 +336,7 @@ def run(trigger: str = "manual") -> dict:
         all_edges = []
         n_lineup_confirmed = 0
         n_fallback_pitchers = 0
+
         for g in active:
             if not g.away_pitcher or not g.home_pitcher:
                 log.warning("Skipping %s - missing probable pitcher", g.game_pk)
@@ -330,10 +352,9 @@ def run(trigger: str = "manual") -> dict:
                 continue
 
             db_row = db.fetchone(
-                "SELECT skip_projection FROM games WHERE game_pk = %s",
-                (g.game_pk,)
+                "SELECT skip_projection FROM games WHERE game_pk = %s", (g.game_pk,)
             )
-            if db_row and db_row.get('skip_projection'):
+            if db_row and db_row.get("skip_projection"):
                 log.info("Skipping %s - manually flagged skip_projection", g.game_pk)
                 metrics["skipped_manual"] = metrics.get("skipped_manual", 0) + 1
                 continue
@@ -343,16 +364,16 @@ def run(trigger: str = "manual") -> dict:
                 "SELECT * FROM games WHERE game_pk = %s", (g.game_pk,)
             ) or {}
             weather = {
-                "temp_f": game_row.get("weather_temp_f"),
-                "wind_mph": game_row.get("weather_wind_mph"),
-                "wind_deg": game_row.get("weather_wind_deg"),
+                "temp_f":    game_row.get("weather_temp_f"),
+                "wind_mph":  game_row.get("weather_wind_mph"),
+                "wind_deg":  game_row.get("weather_wind_deg"),
             }
 
-            # Project both starters
+            away_proj = home_proj = None
             for is_home in (False, True):
                 pitcher_info = g.home_pitcher if is_home else g.away_pitcher
                 team = g.home_team if is_home else g.away_team
-                opp = g.away_team if is_home else g.home_team
+                opp  = g.away_team if is_home else g.home_team
                 opp_lineup = g.away_lineup if is_home else g.home_lineup
                 opp_lineup_input = [
                     projections.HitterSpot(
@@ -391,7 +412,6 @@ def run(trigger: str = "manual") -> dict:
                 else:
                     away_proj = proj
 
-            # Game total + edges
             full_total, f5_total, home_runs, away_runs = projections.project_game_total(
                 away_proj=away_proj, home_proj=home_proj,
                 away_team_xstats=all_team.get(g.away_team),
@@ -409,14 +429,14 @@ def run(trigger: str = "manual") -> dict:
                     lean = "UNDER"
 
             db.insert_game_projection(run_id, {
-                "game_pk": g.game_pk,
-                "proj_total": full_total,
-                "proj_f5": f5_total,
+                "game_pk":        g.game_pk,
+                "proj_total":     full_total,
+                "proj_f5":        f5_total,
                 "proj_home_runs": home_runs,
                 "proj_away_runs": away_runs,
-                "market_total": market_total,
-                "edge_total": round(edge_total, 2) if edge_total is not None else None,
-                "lean": lean,
+                "market_total":   market_total,
+                "edge_total":     round(edge_total, 2) if edge_total is not None else None,
+                "lean":           lean,
                 "confidence_tier": None,
             })
 
@@ -428,7 +448,6 @@ def run(trigger: str = "manual") -> dict:
                 home_team_xstats=all_team.get(g.home_team),
             )
             for e in game_edges:
-                # Tier needs the projection that drove the edge
                 proj_for_tier = None
                 if e["pitcher_mlb_id"] == away_proj.pitcher_mlb_id:
                     proj_for_tier = away_proj
@@ -445,9 +464,7 @@ def run(trigger: str = "manual") -> dict:
         log.info("Run %d complete: %d edges, %d lineup-confirmed, %d fallbacks",
                  run_id, len(all_edges), n_lineup_confirmed, n_fallback_pitchers)
 
-        # ---- Notification ----
         ntfy.send_edges_summary(run_id, all_edges, metrics)
-
         db.log_job_finish(job_id, "success", None, metrics)
         return metrics
 

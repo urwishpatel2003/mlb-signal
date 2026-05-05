@@ -26,7 +26,6 @@ def _dsn() -> str:
     dsn = os.environ.get("DATABASE_URL")
     if not dsn:
         raise RuntimeError("DATABASE_URL not set. Required for db connection.")
-    # Supabase sometimes hands out postgres:// while psycopg3 wants postgresql://
     if dsn.startswith("postgres://"):
         dsn = "postgresql://" + dsn[len("postgres://"):]
     return dsn
@@ -83,7 +82,12 @@ def execute_many(sql: str, rows: list[tuple] | list[dict]) -> int:
 
 
 def upsert_pitcher_xstats(rows: list[dict]) -> int:
-    """Bulk upsert by (mlb_id, season_year)."""
+    """
+    Bulk upsert by (mlb_id, season_year).
+    NOTE: xfip, k_pct, bb9 are NOT written here — they come from
+    _refresh_pitcher_budget() which runs as a separate UPDATE pass.
+    This avoids overwriting budget data with NULL on each Savant refresh.
+    """
     if not rows:
         return 0
     sql = """
@@ -95,18 +99,28 @@ def upsert_pitcher_xstats(rows: list[dict]) -> int:
            %(ba)s, %(est_ba)s, %(slg)s, %(est_slg)s,
            %(woba)s, %(est_woba)s, %(era)s, %(xera)s, now())
         ON CONFLICT (mlb_id, season_year) DO UPDATE SET
-          last_first = EXCLUDED.last_first,
-          pa = EXCLUDED.pa, bip = EXCLUDED.bip,
-          ba = EXCLUDED.ba, est_ba = EXCLUDED.est_ba,
-          slg = EXCLUDED.slg, est_slg = EXCLUDED.est_slg,
-          woba = EXCLUDED.woba, est_woba = EXCLUDED.est_woba,
-          era = EXCLUDED.era, xera = EXCLUDED.xera,
+          last_first   = EXCLUDED.last_first,
+          pa           = EXCLUDED.pa,
+          bip          = EXCLUDED.bip,
+          ba           = EXCLUDED.ba,
+          est_ba       = EXCLUDED.est_ba,
+          slg          = EXCLUDED.slg,
+          est_slg      = EXCLUDED.est_slg,
+          woba         = EXCLUDED.woba,
+          est_woba     = EXCLUDED.est_woba,
+          era          = EXCLUDED.era,
+          xera         = EXCLUDED.xera,
           refreshed_at = now();
     """
     return execute_many(sql, rows)
 
 
 def upsert_hitter_xstats(rows: list[dict]) -> int:
+    """
+    Bulk upsert by (mlb_id, season_year).
+    NOTE: l15_woba is NOT written here — it comes from _refresh_hitter_budget()
+    which runs as a separate UPDATE pass using COALESCE to preserve existing values.
+    """
     if not rows:
         return 0
     sql = """
@@ -118,22 +132,20 @@ def upsert_hitter_xstats(rows: list[dict]) -> int:
            %(ba)s, %(est_ba)s, %(slg)s, %(est_slg)s,
            %(woba)s, %(est_woba)s, now())
         ON CONFLICT (mlb_id, season_year) DO UPDATE SET
-          last_first = EXCLUDED.last_first,
-          pa = EXCLUDED.pa,
-          ba = EXCLUDED.ba, est_ba = EXCLUDED.est_ba,
-          slg = EXCLUDED.slg, est_slg = EXCLUDED.est_slg,
-          woba = EXCLUDED.woba, est_woba = EXCLUDED.est_woba,
+          last_first   = EXCLUDED.last_first,
+          pa           = EXCLUDED.pa,
+          ba           = EXCLUDED.ba,
+          est_ba       = EXCLUDED.est_ba,
+          slg          = EXCLUDED.slg,
+          est_slg      = EXCLUDED.est_slg,
+          woba         = EXCLUDED.woba,
+          est_woba     = EXCLUDED.est_woba,
           refreshed_at = now();
     """
     return execute_many(sql, rows)
 
 
 def upsert_team_bullpen_stats(rows: list[dict]) -> int:
-    """
-    Update bullpen aggregate fields on team_xstats. Assumes the row already
-    exists (it does, from upsert_team_xstats during the xStats refresh path).
-    Does NOT insert; if the team_code/season_year row is missing we skip silently.
-    """
     if not rows:
         return 0
     sql = """
@@ -142,9 +154,9 @@ def upsert_team_bullpen_stats(rows: list[dict]) -> int:
         VALUES
           (%(team_code)s, %(season_year)s, %(bullpen_era)s, %(bullpen_xera)s, %(bullpen_ip)s, now())
         ON CONFLICT (team_code, season_year) DO UPDATE SET
-          bullpen_era = EXCLUDED.bullpen_era,
+          bullpen_era  = EXCLUDED.bullpen_era,
           bullpen_xera = EXCLUDED.bullpen_xera,
-          bullpen_ip = EXCLUDED.bullpen_ip,
+          bullpen_ip   = EXCLUDED.bullpen_ip,
           refreshed_at = now();
     """
     return execute_many(sql, rows)
@@ -159,8 +171,9 @@ def upsert_team_xstats(rows: list[dict]) -> int:
         VALUES
           (%(team_code)s, %(season_year)s, %(pa)s, %(woba)s, %(est_woba)s, now())
         ON CONFLICT (team_code, season_year) DO UPDATE SET
-          pa = EXCLUDED.pa,
-          woba = EXCLUDED.woba, est_woba = EXCLUDED.est_woba,
+          pa           = EXCLUDED.pa,
+          woba         = EXCLUDED.woba,
+          est_woba     = EXCLUDED.est_woba,
           refreshed_at = now();
     """
     return execute_many(sql, rows)
@@ -174,7 +187,8 @@ def upsert_game(g: dict) -> None:
           away_pitcher_id, home_pitcher_id, away_pitcher_hand, home_pitcher_hand,
           away_pitcher_name, home_pitcher_name,
           away_score, home_score,
-          weather_condition, weather_temp_f, weather_wind, weather_wind_mph, weather_wind_deg, weather_precip_pct,
+          weather_condition, weather_temp_f, weather_wind, weather_wind_mph,
+          weather_wind_deg, weather_precip_pct,
           refreshed_at
         ) VALUES (
           %(game_pk)s, %(game_date)s, %(game_time_et)s, %(status)s,
@@ -182,30 +196,31 @@ def upsert_game(g: dict) -> None:
           %(away_pitcher_id)s, %(home_pitcher_id)s, %(away_pitcher_hand)s, %(home_pitcher_hand)s,
           %(away_pitcher_name)s, %(home_pitcher_name)s,
           %(away_score)s, %(home_score)s,
-          %(weather_condition)s, %(weather_temp_f)s, %(weather_wind)s, %(weather_wind_mph)s, %(weather_wind_deg)s, %(weather_precip_pct)s,
+          %(weather_condition)s, %(weather_temp_f)s, %(weather_wind)s, %(weather_wind_mph)s,
+          %(weather_wind_deg)s, %(weather_precip_pct)s,
           now()
         )
         ON CONFLICT (game_pk) DO UPDATE SET
-          game_date = EXCLUDED.game_date,
-          game_time_et = EXCLUDED.game_time_et,
-          status = EXCLUDED.status,
-          away_record = EXCLUDED.away_record,
-          home_record = EXCLUDED.home_record,
-          away_pitcher_id = EXCLUDED.away_pitcher_id,
-          home_pitcher_id = EXCLUDED.home_pitcher_id,
-          away_pitcher_hand = EXCLUDED.away_pitcher_hand,
-          home_pitcher_hand = EXCLUDED.home_pitcher_hand,
-          away_pitcher_name = EXCLUDED.away_pitcher_name,
-          home_pitcher_name = EXCLUDED.home_pitcher_name,
-          away_score = EXCLUDED.away_score,
-          home_score = EXCLUDED.home_score,
-          weather_condition = EXCLUDED.weather_condition,
-          weather_temp_f = EXCLUDED.weather_temp_f,
-          weather_wind = EXCLUDED.weather_wind,
-          weather_wind_mph = EXCLUDED.weather_wind_mph,
-          weather_wind_deg = EXCLUDED.weather_wind_deg,
+          game_date          = EXCLUDED.game_date,
+          game_time_et       = EXCLUDED.game_time_et,
+          status             = EXCLUDED.status,
+          away_record        = EXCLUDED.away_record,
+          home_record        = EXCLUDED.home_record,
+          away_pitcher_id    = EXCLUDED.away_pitcher_id,
+          home_pitcher_id    = EXCLUDED.home_pitcher_id,
+          away_pitcher_hand  = EXCLUDED.away_pitcher_hand,
+          home_pitcher_hand  = EXCLUDED.home_pitcher_hand,
+          away_pitcher_name  = EXCLUDED.away_pitcher_name,
+          home_pitcher_name  = EXCLUDED.home_pitcher_name,
+          away_score         = EXCLUDED.away_score,
+          home_score         = EXCLUDED.home_score,
+          weather_condition  = EXCLUDED.weather_condition,
+          weather_temp_f     = EXCLUDED.weather_temp_f,
+          weather_wind       = EXCLUDED.weather_wind,
+          weather_wind_mph   = EXCLUDED.weather_wind_mph,
+          weather_wind_deg   = EXCLUDED.weather_wind_deg,
           weather_precip_pct = EXCLUDED.weather_precip_pct,
-          refreshed_at = now();
+          refreshed_at       = now();
     """
     execute(sql, g)
 
@@ -246,19 +261,22 @@ def create_projection_run(run_date: str, model_version: str,
 
 
 def insert_pitcher_projection(run_id: int, p: dict) -> None:
+    """Insert a pitcher projection row. Includes v3 fields: xfip, used_l15_blend, high_variance_flag."""
     sql = """
         INSERT INTO pitcher_projections (
           run_id, game_pk, mlb_id, last_first, team_code, opp_team_code,
-          hand, source, pa_sample, era, xera, true_era, xwoba_against,
-          opp_lineup_xwoba, used_actual_lineup,
-          ip, outs, hits, er, bb, k, wx_factor, pf_factor
+          hand, source, pa_sample,
+          era, xera, xfip, true_era, xwoba_against,
+          opp_lineup_xwoba, used_actual_lineup, used_l15_blend,
+          ip, outs, hits, er, bb, k,
+          wx_factor, pf_factor, high_variance_flag
         ) VALUES (
           %(run_id)s, %(game_pk)s, %(mlb_id)s, %(last_first)s, %(team_code)s,
           %(opp_team_code)s, %(hand)s, %(source)s, %(pa_sample)s,
-          %(era)s, %(xera)s, %(true_era)s, %(xwoba_against)s,
-          %(opp_lineup_xwoba)s, %(used_actual_lineup)s,
+          %(era)s, %(xera)s, %(xfip)s, %(true_era)s, %(xwoba_against)s,
+          %(opp_lineup_xwoba)s, %(used_actual_lineup)s, %(used_l15_blend)s,
           %(ip)s, %(outs)s, %(hits)s, %(er)s, %(bb)s, %(k)s,
-          %(wx_factor)s, %(pf_factor)s
+          %(wx_factor)s, %(pf_factor)s, %(high_variance_flag)s
         )
     """
     execute(sql, {**p, "run_id": run_id})
