@@ -135,12 +135,8 @@ def compute_edges_for_game(*,game_pk,game,away_proj,home_proj,
 
 def persist_game(g):
     weather={}
-    if g.weather:
-        weather={"condition":g.weather.condition,"temp_f":g.weather.temp_f,
-                 "wind_raw":g.weather.wind,"wind_mph":None,"wind_deg":None,"precip_pct":None}
-    else:
-        try: weather=enrich_weather_for_game(g)
-        except Exception as e: log.debug("Weather failed: %s",e)
+    try: weather=enrich_weather_for_game(g)
+    except Exception as e: log.debug("Weather failed: %s",e); weather={}
     db.upsert_game({"game_pk":g.game_pk,
         "game_date":g.game_date_et.isoformat() if g.game_date_et else None,
         "game_time_et":g.game_time_et,"status":g.status,
@@ -285,4 +281,5 @@ def main():
     print(run(trigger=ap.parse_args().trigger))
 
 if __name__=="__main__": main()
+
 
