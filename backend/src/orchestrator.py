@@ -138,7 +138,7 @@ def persist_game(g):
     try: weather=enrich_weather_for_game(g)
     except Exception as e: log.debug("Weather failed: %s",e); weather={}
     db.upsert_game({"game_pk":g.game_pk,
-        "game_date":g.game_date_et.isoformat() if g.game_date_et else None,
+        "game_date":g.game_date_et if g.game_date_et else None,
         "game_time_et":g.game_time_et,"status":g.status,
         "away_team":g.away_team,"home_team":g.home_team,
         "away_record":g.away_record,"home_record":g.home_record,
@@ -281,5 +281,6 @@ def main():
     print(run(trigger=ap.parse_args().trigger))
 
 if __name__=="__main__": main()
+
 
 
