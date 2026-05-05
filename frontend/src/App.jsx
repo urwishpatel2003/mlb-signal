@@ -507,6 +507,54 @@ function DayCard({day}){
   const profit=s.profit_units||0;
   const buckets=day.buckets||[];
   const rate=wins+losses>0?Math.round(wins/(wins+losses)*100):0;
+  const pushStr=pushes>0?('-'+pushes):'';
+  return (
+    <div className={profit>=0?'day-card pos':'day-card neg'}>
+      <div className="day-header" onClick={()=>setOpen(!open)}>
+        <span className="day-date">{day.run_date}</span>
+        <div className="day-summary">
+          <span className="day-wl">{wins}-{losses}{pushStr}</span>
+          <span className="day-rate">{rate}%</span>
+          <span className={profit>=0?'day-units pos':'day-units neg'}>{fmtSign(profit)}u</span>
+        </div>
+        <span className="day-toggle">{open?'\u25b2':'\u25bc'}</span>
+      </div>
+      {open&&<div className="day-sections">
+        {buckets.map((b,bi)=>{
+          const bPushStr=b.pushes>0?('-'+b.pushes):'';
+          return (
+            <div key={bi} className="day-section">
+              <div className="day-section-header">
+                <span className="section-name">{b.category} {b.lean}</span>
+                <span className="section-stats">
+                  {b.wins}-{b.losses}{bPushStr}&nbsp;
+                  <span className={b.profit_units>=0?'pos':'neg'}>{fmtSign(b.profit_units)}u</span>
+                </span>
+              </div>
+              {(b.plays||[]).map((p,i)=>(
+                <div key={i} className={'play-row result-'+(p.result||'').toLowerCase()}>
+                  <span className="play-subject">{p.subject}</span>
+                  <span className="play-line">{p.line}</span>
+                  <span className="play-actual">{p.actual_value!=null?p.actual_value:'-'}</span>
+                  <span className={'play-result res-'+(p.result||'').toLowerCase()}>{p.result}</span>
+                  <span className={(p.profit_units||0)>=0?'play-profit pos':'play-profit neg'}>{fmtSign(p.profit_units||0)}u</span>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>}
+    </div>
+  );
+}){
+  const [open,setOpen]=useState(false);
+  const s=day.summary||{};
+  const wins=s.wins||0;
+  const losses=s.losses||0;
+  const pushes=s.pushes||0;
+  const profit=s.profit_units||0;
+  const buckets=day.buckets||[];
+  const rate=wins+losses>0?Math.round(wins/(wins+losses)*100):0;
   return (
     <div className={`day-card ${profit>=0?'pos':'neg'}`}>
       <div className="day-header" onClick={()=>setOpen(!open)}>
