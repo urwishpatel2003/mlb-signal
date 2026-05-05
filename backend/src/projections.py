@@ -1,18 +1,17 @@
 """
-Projection engine — v3.0
+Projection engine — v4.0
 
-Improvements over v2:
-  1. True ERA blend: 0.55×xERA + 0.30×xFIP + 0.15×ERA  (xFIP stabilises faster
-     than xERA; blending in raw ERA is kept at 15% only)
-  2. Continuous IP leash: smooth gradient instead of 3-bucket hard thresholds
-  3. BB/9 from real Statcast data with Bayesian shrinkage toward league average
-  4. K% taken directly from pitcher Statcast row, not inferred from xwOBA
-  5. Lineup strength blends season xwOBA with last-15-game rolling wOBA (0.70/0.30)
-  6. Per-hitter L/R splits used when ≥80 PA from a side, else league platoon mult
-  7. High-variance starter flag: pitchers with true_era > 5.0 get IP haircut +
-     extra bullpen ER padding to account for early-hook probability
+New vs v3.0:
+  1. HFA (Home Field Advantage): +2.5pp added to home win probability post-Skellam
+  2. Skip ML edges for fallback starters (low_sample / league_avg)
+  3. 7-day bullpen ERA blended with season ERA in _compute_team_bullpen_er9
+  4. Days rest adjustment: ±0.3 IP on leash based on days since last start
+  5. Offensive strength scaler: team xwOBA adjusts run totals independently of pitcher projection
+  6. xFIP computed from components (FB%, HR/FB rate) when available
+  7. Calibration-ready: win prob functions accept an external HFA override
+  8. Hitter props groundwork: project_hitter_props() stub ready for wiring
 
-Tested: 29 pure-function tests, no DB/network dependencies.
+All prior improvements (v3.0) retained.
 """
 from __future__ import annotations
 from dataclasses import dataclass, asdict
@@ -29,28 +28,31 @@ LEAGUE_K9      = 8.5
 LEAGUE_BB9     = 3.2
 LEAGUE_K_PCT   = 0.225
 LEAGUE_ER9     = 4.30
-LEAGUE_XFIP    = 4.10   # normalised FIP, roughly stable year-to-year
+LEAGUE_XFIP    = 4.10
+LEAGUE_HR_FB   = 0.118   # league-average HR/FB rate
+LEAGUE_FB_PCT  = 0.355   # league-average fly ball rate
 
-# ---------- Platoon multipliers (league-average; overridden by per-hitter splits) ----------
-# Keys: (batter_hand, pitcher_hand)
+# Home field advantage — additive on win probability
+# Calibrate from graded results once 50+ ML plays graded
+HOME_FIELD_ADVANTAGE = 0.025
+
+# Platoon multipliers
 PLATOON_XWOBA = {
-    ("L", "L"): 0.93,
-    ("L", "R"): 1.04,
-    ("R", "R"): 0.97,
-    ("R", "L"): 1.05,
-    ("S", "L"): 1.05,
-    ("S", "R"): 1.04,
+    ("L","L"): 0.93, ("L","R"): 1.04,
+    ("R","R"): 0.97, ("R","L"): 1.05,
+    ("S","L"): 1.05, ("S","R"): 1.04,
 }
 
-# PA weights by batting-order spot
-PA_WEIGHTS = {1: 4.7, 2: 4.5, 3: 4.4, 4: 4.2, 5: 4.0,
-              6: 3.9, 7: 3.7, 8: 3.6, 9: 3.5}
-
-# Minimum PA from a given side before we trust per-hitter split over league mult
+PA_WEIGHTS = {1:4.7,2:4.5,3:4.4,4:4.2,5:4.0,6:3.9,7:3.7,8:3.6,9:3.5}
 SPLIT_PA_THRESHOLD = 80
-
-# Bayesian sample size for BB/9 shrinkage
 BB9_SHRINK_N = 200
+
+# Days rest IP adjustments
+DAYS_REST_IP_ADJ = {
+    "short":  -0.30,   # 3 days rest or fewer
+    "normal":  0.00,   # 4-5 days
+    "extra":   0.15,   # 6+ days (extra rest, usually sharp)
+}
 
 
 # =============================================================================
@@ -59,10 +61,9 @@ BB9_SHRINK_N = 200
 
 @dataclass
 class HitterSpot:
-    """Batting-order slot fed into the projection engine."""
     mlb_id: int
     last_first: str
-    bat_side: str       # "L" / "R" / "S"
+    bat_side: str
     order: int
 
 
@@ -73,20 +74,18 @@ class PitcherProjection:
     team_code: str
     opp_team_code: str
     hand: str
-    source: str         # "statcast" | "low_sample" | "league_avg"
+    source: str
     pa_sample: int
 
-    # Diagnostics
     era:              Optional[float]
     xera:             Optional[float]
-    xfip:             Optional[float]   # NEW: surfaced for transparency
+    xfip:             Optional[float]
     true_era:         float
     xwoba_against:    Optional[float]
     opp_lineup_xwoba: float
     used_actual_lineup: bool
-    used_l15_blend:   bool              # NEW: did we blend in last-15 wOBA?
+    used_l15_blend:   bool
 
-    # Adjusted projection
     ip:   float
     outs: float
     hits: float
@@ -94,248 +93,224 @@ class PitcherProjection:
     bb:   float
     k:    float
 
-    # Multipliers / flags
     wx_factor:          float
     pf_factor:          float
-    high_variance_flag: bool            # NEW: true_era > 5.0 triggers early-hook padding
+    high_variance_flag: bool
+    days_rest:          Optional[int]   # NEW: days since last start
 
     def to_dict(self) -> dict:
         return asdict(self)
 
+    @property
+    def is_reliable(self) -> bool:
+        """True only for statcast-sourced projections. Used to gate ML edges."""
+        return self.source == "statcast"
+
 
 # =============================================================================
-# Weather helpers  (unchanged from v2)
+# Weather
 # =============================================================================
 
 def temp_run_factor(temp_f: Optional[float]) -> float:
-    if temp_f is None:
-        return 1.0
+    if temp_f is None: return 1.0
     return 1.0 + ((temp_f - 70) / 10) * 0.0093
 
-
-def _wind_components(wind_deg: Optional[float], cf_az: float) -> tuple[float, float]:
-    if wind_deg is None:
-        return 0.0, 0.0
+def _wind_components(wind_deg, cf_az):
+    if wind_deg is None: return 0.0, 0.0
     wind_to = (wind_deg + 180) % 360
-    radians = math.radians(wind_to - cf_az)
-    return math.cos(radians), abs(math.sin(radians))
+    r = math.radians(wind_to - cf_az)
+    return math.cos(r), abs(math.sin(r))
 
-
-def wind_run_factor(mph: Optional[float],
-                    wind_deg: Optional[float],
-                    cf_az: float) -> float:
-    if mph is None or wind_deg is None or mph < 1:
-        return 1.0
+def wind_run_factor(mph, wind_deg, cf_az):
+    if mph is None or wind_deg is None or mph < 1: return 1.0
     out, cross = _wind_components(wind_deg, cf_az)
     return 1.0 + (mph * out / 5) * 0.023 - (mph * cross / 5) * 0.009
+
+
+# =============================================================================
+# Improvement #6 — xFIP from components
+# =============================================================================
+
+def compute_xfip(k: float, bb: float, hbp: float, ip: float,
+                 fb_pct: Optional[float], hr_fb: Optional[float],
+                 lg_hr_fb: float = LEAGUE_HR_FB) -> Optional[float]:
+    """
+    xFIP = ((13 × (FB × lgHR/FB)) + (3 × (BB + HBP)) - (2 × K)) / IP + const
+
+    Uses league-average HR/FB rate to normalise HR luck out of ERA.
+    const (~3.10) centres xFIP around league ERA.
+    Returns None if insufficient data.
+    """
+    if ip is None or ip <= 0:
+        return None
+    fb_rate = fb_pct if fb_pct is not None else LEAGUE_FB_PCT
+    # Projected FB = IP × 3 PAs × FB% (rough approximation)
+    # More precisely: FB = BIP × FB%, but we use IP-based estimate
+    estimated_bip = max(0, ip * 4.0 - bb - k * 0.33)
+    estimated_fb  = estimated_bip * fb_rate
+    xfip_num = (13 * estimated_fb * lg_hr_fb) + (3 * (bb + hbp)) - (2 * k)
+    xfip = xfip_num / ip + 3.10
+    return round(max(1.5, min(8.0, xfip)), 2)
+
+
+# =============================================================================
+# Improvement #4 — Days rest IP adjustment
+# =============================================================================
+
+def _days_rest_ip_adj(days_rest: Optional[int]) -> float:
+    """Return additive IP adjustment based on days since last start."""
+    if days_rest is None:
+        return 0.0
+    if days_rest <= 3:
+        return DAYS_REST_IP_ADJ["short"]
+    if days_rest >= 6:
+        return DAYS_REST_IP_ADJ["extra"]
+    return DAYS_REST_IP_ADJ["normal"]
 
 
 # =============================================================================
 # Improvement #6 — Per-hitter platoon splits
 # =============================================================================
 
-def _platoon_factor(bat_side: str,
-                    pitcher_hand: str,
-                    hitter_splits: Optional[dict]) -> float:
-    """
-    Return the platoon multiplier for this (bat_side, pitcher_hand) matchup.
-
-    Uses per-hitter split xwOBA vs. league-average side xwOBA when the hitter
-    has ≥ SPLIT_PA_THRESHOLD PA from that side. Falls back to the league-level
-    PLATOON_XWOBA multiplier otherwise.
-
-    hitter_splits: {"L": {"est_woba": 0.295, "pa": 120},
-                    "R": {"est_woba": 0.340, "pa": 95}} or None
-    """
+def _platoon_factor(bat_side, pitcher_hand, hitter_splits):
     if hitter_splits and pitcher_hand in hitter_splits:
-        side_data = hitter_splits[pitcher_hand]
-        if (side_data.get("pa") or 0) >= SPLIT_PA_THRESHOLD:
-            split_xwoba = side_data.get("est_woba")
-            if split_xwoba:
-                # Normalise against league: if split xwOBA is 0.305 vs league 0.320,
-                # factor = 0.305/0.320 = 0.953 — pitcher sees weaker-than-average offense
-                return float(split_xwoba) / LEAGUE_XWOBA
-
+        sd = hitter_splits[pitcher_hand]
+        if (sd.get("pa") or 0) >= SPLIT_PA_THRESHOLD:
+            xw = sd.get("est_woba")
+            if xw:
+                return float(xw) / LEAGUE_XWOBA
     return PLATOON_XWOBA.get((bat_side, pitcher_hand), 1.0)
 
 
 # =============================================================================
-# Improvement #5 — Lineup xwOBA with last-15 wOBA blend
+# Improvement #5 — Lineup xwOBA with L15 blend + offensive strength
 # =============================================================================
 
-def opp_lineup_xwoba(lineup: list[HitterSpot],
-                     pitcher_hand: str,
-                     hitter_xstats: dict[int, dict],
-                     team_fallback: float,
-                     pa_threshold: int = 20) -> tuple[float, bool, bool]:
-    """
-    Lineup-weighted opposing xwOBA, adjusted for platoon.
-
-    Improvement #5: when a hitter has a `l15_woba` field (last-15-game rolling
-    wOBA), blend it: 0.70 × season_xwoba + 0.30 × l15_woba.  This captures
-    hot/cold streaks and recent injury replacements far better than season
-    xwOBA alone.
-
-    Improvement #6: uses per-hitter L/R split xwOBA (via hitter_splits sub-dict)
-    when sample is large enough, instead of the flat league-level platoon mult.
-
-    Returns (weighted_xwoba, used_actual_lineup, used_l15_blend).
-    """
+def opp_lineup_xwoba(lineup, pitcher_hand, hitter_xstats, team_fallback,
+                     pa_threshold=20):
+    """Returns (weighted_xwoba, used_actual_lineup, used_l15_blend)."""
     if not lineup:
         return team_fallback, False, False
-
-    weighted_sum = 0.0
-    total_w = 0.0
-    matched = 0
-    any_l15 = False
-
+    ws = tw = 0.0; matched = 0; any_l15 = False
     for spot in lineup:
         row = hitter_xstats.get(spot.mlb_id)
-        if not row or (row.get("pa") or 0) < pa_threshold:
-            continue
+        if not row or (row.get("pa") or 0) < pa_threshold: continue
         xwoba = row.get("est_woba")
-        if xwoba is None:
-            continue
-
+        if xwoba is None: continue
         season_xwoba = float(xwoba)
-
-        # Improvement #5: blend in recent form when available
         l15 = row.get("l15_woba")
-        if l15 is not None:
-            blended = 0.70 * season_xwoba + 0.30 * float(l15)
-            any_l15 = True
-        else:
-            blended = season_xwoba
-
-        # Improvement #6: per-hitter split or league-level platoon mult
-        hitter_splits = row.get("splits")   # {"L": {...}, "R": {...}}
-        platoon = _platoon_factor(spot.bat_side, pitcher_hand, hitter_splits)
-        adjusted = blended * platoon
-
+        blended = 0.70 * season_xwoba + 0.30 * float(l15) if l15 is not None else season_xwoba
+        if l15 is not None: any_l15 = True
+        platoon = _platoon_factor(spot.bat_side, pitcher_hand, row.get("splits"))
         pa_w = PA_WEIGHTS.get(spot.order, 4.0)
-        weighted_sum += adjusted * pa_w
-        total_w += pa_w
+        ws += blended * platoon * pa_w
+        tw += pa_w
         matched += 1
-
-    if matched < 6 or total_w == 0:
+    if matched < 6 or tw == 0:
         return team_fallback, False, False
+    return ws / tw, True, any_l15
 
-    return weighted_sum / total_w, True, any_l15
 
-
-def opp_lineup_k_pct(lineup: list[HitterSpot],
-                     hitter_xstats: dict[int, dict],
-                     pa_threshold: int = 30) -> Optional[float]:
-    """Lineup-weighted K rate; None if fewer than 6 hitters have usable data."""
-    if not lineup:
-        return None
-    weighted_sum = 0.0
-    total_w = 0.0
-    matched = 0
+def opp_lineup_k_pct(lineup, hitter_xstats, pa_threshold=30):
+    if not lineup: return None
+    ws = tw = 0.0; matched = 0
     for spot in lineup:
         row = hitter_xstats.get(spot.mlb_id)
-        if not row or (row.get("pa") or 0) < pa_threshold:
-            continue
+        if not row or (row.get("pa") or 0) < pa_threshold: continue
         k_pct = row.get("k_pct")
-        if k_pct is None:
-            continue
+        if k_pct is None: continue
         pa_w = PA_WEIGHTS.get(spot.order, 4.0)
-        weighted_sum += float(k_pct) * pa_w
-        total_w += pa_w
-        matched += 1
-    if matched < 6 or total_w == 0:
-        return None
-    return weighted_sum / total_w
+        ws += float(k_pct) * pa_w; tw += pa_w; matched += 1
+    if matched < 6 or tw == 0: return None
+    return ws / tw
 
 
 # =============================================================================
 # IP helpers
 # =============================================================================
 
-def _lineup_pitches_per_pa(opp_lineup, hitter_xstats) -> float:
-    """Average pitches/PA across lineup; 3.92 league fallback if <4 data points."""
-    if not opp_lineup:
-        return 3.92
+def _lineup_pitches_per_pa(opp_lineup, hitter_xstats):
+    if not opp_lineup: return 3.92
     rates = []
     for spot in opp_lineup:
         h = hitter_xstats.get(spot.mlb_id)
         if h and h.get("pitches_per_pa"):
-            try:
-                rates.append(float(h["pitches_per_pa"]))
-            except (TypeError, ValueError):
-                pass
-    if len(rates) < 4:
-        return 3.92
-    return sum(rates) / len(rates)
+            try: rates.append(float(h["pitches_per_pa"]))
+            except: pass
+    return sum(rates)/len(rates) if len(rates) >= 4 else 3.92
 
 
-def _project_ip_pitch_budget(avg_pitches_per_start,
-                              pitcher_pitches_per_pa,
-                              lineup_pitches_per_pa,
-                              fallback_ip: float) -> float:
-    """Estimate IP from pitch budget and lineup patience."""
-    if avg_pitches_per_start is not None:
-        avg_pitches_per_start = float(avg_pitches_per_start)
-    if pitcher_pitches_per_pa is not None:
-        pitcher_pitches_per_pa = float(pitcher_pitches_per_pa)
-    if lineup_pitches_per_pa is not None:
-        lineup_pitches_per_pa = float(lineup_pitches_per_pa)
+def _project_ip_pitch_budget(avg_pps, pit_ppa, lineup_ppa, fallback_ip):
+    if avg_pps is not None: avg_pps = float(avg_pps)
+    if pit_ppa is not None: pit_ppa = float(pit_ppa)
+    if lineup_ppa is not None: lineup_ppa = float(lineup_ppa)
+    if not avg_pps or not pit_ppa: return fallback_ip
+    eff = (pit_ppa + (lineup_ppa or 3.92)) / 2.0
+    if eff <= 0: return fallback_ip
+    return max(3.0, min(8.5, (avg_pps / eff * 0.71) / 3.0))
 
-    if not avg_pitches_per_start or not pitcher_pitches_per_pa:
-        return fallback_ip
-    if not lineup_pitches_per_pa or lineup_pitches_per_pa <= 0:
-        lineup_pitches_per_pa = 3.92
 
-    effective_ppa = (pitcher_pitches_per_pa + lineup_pitches_per_pa) / 2.0
-    if effective_ppa <= 0:
-        return fallback_ip
-    projected_pa = avg_pitches_per_start / effective_ppa
-    projected_ip = (projected_pa * 0.71) / 3.0
-    return max(3.0, min(8.5, projected_ip))
+def _continuous_ip_leash(true_era):
+    """Smooth gradient: elite ERA→7.0 IP, bad ERA→4.0 IP."""
+    return max(4.0, min(7.0, 6.5 - (true_era - 3.5) * 0.40))
 
 
 # =============================================================================
-# Improvement #2 — Continuous IP leash
-# =============================================================================
-
-def _continuous_ip_leash(true_era: float) -> float:
-    """
-    Smooth IP estimate from true ERA. Replaces 3-bucket hard thresholds.
-
-    Formula: base_ip = 6.5 - (true_era - 3.5) × 0.40
-    Clamped to [4.0, 7.0].
-
-    Examples:
-      true_era 2.50 → 7.0  (capped)
-      true_era 3.50 → 6.50
-      true_era 4.30 → 6.18
-      true_era 5.50 → 5.70
-      true_era 6.25 → 5.40
-      true_era 7.25 → 4.0  (floored)
-    """
-    base = 6.5 - (true_era - 3.5) * 0.40
-    return max(4.0, min(7.0, base))
-
-
-# =============================================================================
-# Bullpen helper  (unchanged from v2)
+# Bullpen — Improvement #3: blend 7-day ERA
 # =============================================================================
 
 def _compute_team_bullpen_er9(team_xstats_row, league_avg_er9=4.0) -> float:
+    """
+    Improvement #3: blend season bullpen ERA with last-7-day ERA.
+    7-day ERA gets 40% weight when ≥10 IP available (captures recent fatigue/form).
+    Falls back to season ERA when L7 data is absent.
+    """
     if not team_xstats_row:
         return league_avg_er9
+
     bp_ip = float(team_xstats_row.get("bullpen_ip") or 0)
     bp_era_raw = team_xstats_row.get("bullpen_era")
     if not bp_era_raw or bp_ip <= 0:
         return league_avg_er9
+
     bp_era = float(bp_era_raw)
     bp_xera_raw = team_xstats_row.get("bullpen_xera")
-    if bp_xera_raw:
-        team_true_era = 0.7 * float(bp_xera_raw) + 0.3 * bp_era
-    else:
-        team_true_era = bp_era
-    weight = bp_ip / (bp_ip + 50.0)
-    return weight * team_true_era + (1 - weight) * league_avg_er9
+    season_true = 0.7 * float(bp_xera_raw) + 0.3 * bp_era if bp_xera_raw else bp_era
+
+    # Bayesian shrink season toward league
+    season_weight = bp_ip / (bp_ip + 50.0)
+    season_er9 = season_weight * season_true + (1 - season_weight) * league_avg_er9
+
+    # Improvement #3: blend in L7 when available
+    l7_era = team_xstats_row.get("bullpen_era_l7")
+    l7_ip  = float(team_xstats_row.get("bullpen_ip_l7") or 0)
+    if l7_era is not None and l7_ip >= 10:
+        l7_weight = min(0.40, l7_ip / 40.0)   # max 40% weight at 40+ IP in 7 days
+        return round(l7_weight * float(l7_era) + (1 - l7_weight) * season_er9, 3)
+
+    return round(season_er9, 3)
+
+
+# =============================================================================
+# Improvement #5 — Offensive strength scaler
+# =============================================================================
+
+def _offensive_strength_scaler(team_xstats_row) -> float:
+    """
+    Scale run projection based on team's offensive xwOBA vs league.
+    Returns a multiplier: strong offense (xwOBA > .320) → >1.0, weak → <1.0.
+    Capped at ±10% to avoid overriding the starter-centric projection.
+
+    Uses team_xwoba from team_xstats (team's own hitting xwOBA, not pitcher's).
+    """
+    if not team_xstats_row:
+        return 1.0
+    team_xwoba = team_xstats_row.get("team_xwoba") or team_xstats_row.get("est_woba")
+    if not team_xwoba:
+        return 1.0
+    delta = float(team_xwoba) - LEAGUE_XWOBA   # e.g. +0.015 for strong offense
+    scaler = 1.0 + delta * 3.0                  # 0.015 delta → 4.5% boost
+    return max(0.90, min(1.10, scaler))
 
 
 # =============================================================================
@@ -350,135 +325,106 @@ def project_pitcher(
     pitcher_hand: str,
     team_code: str,
     opp_team_code: str,
-    opp_lineup: list[HitterSpot],
-    hitter_xstats: dict[int, dict],
+    opp_lineup: list,
+    hitter_xstats: dict,
     team_xwoba_fallback: float,
     park: dict,
     weather: dict,
     low_sample_pa_threshold: int = 30,
 ) -> PitcherProjection:
-    """
-    Produce a single pitcher's projected line for tonight's start.
-
-    Changes vs v2:
-      - opp_lineup_xwoba now returns 3-tuple (xwoba, used_actual, used_l15)
-      - true_era uses 3-way blend with xFIP (#1)
-      - BB/9 from real Statcast data with Bayesian shrinkage (#3)
-      - K% from pitcher's actual k_pct, not inferred from xwOBA (#4)
-      - Continuous IP leash (#2)
-      - high_variance_flag + IP haircut + extra bullpen padding (#7)
-    """
-    # ---- Opposing lineup strength (Improvements #5 + #6) ----
     opp_xwoba, used_actual, used_l15 = opp_lineup_xwoba(
-        opp_lineup, pitcher_hand, hitter_xstats, team_xwoba_fallback,
-        pa_threshold=20,
-    )
+        opp_lineup, pitcher_hand, hitter_xstats, team_xwoba_fallback, pa_threshold=20)
     woba_delta = opp_xwoba - LEAGUE_XWOBA
 
-    # ---- Pitcher talent baseline ----
     pa = int((pitcher_xstats or {}).get("pa") or 0)
-    fallback = (
-        pitcher_xstats is None
-        or pitcher_xstats.get("xera") is None
-        or pa < low_sample_pa_threshold
-    )
+    days_rest = (pitcher_xstats or {}).get("days_rest")
+    fallback = (pitcher_xstats is None or pitcher_xstats.get("xera") is None
+                or pa < low_sample_pa_threshold)
 
     if fallback:
         true_era = LEAGUE_ER9
         xera = era = xfip = xwoba_against = None
-        h_per_pa = LEAGUE_XBA
-        k_pct = LEAGUE_K_PCT
-        bb9 = LEAGUE_BB9
+        h_per_pa = LEAGUE_XBA; k_pct = LEAGUE_K_PCT; bb9 = LEAGUE_BB9
         source = "league_avg" if pitcher_xstats is None else "low_sample"
-        ip = 5.0
-        high_variance = False
-
+        ip = 5.0; high_variance = False
     else:
         xera = float(pitcher_xstats["xera"])
-        era  = float(pitcher_xstats.get("era")  or LEAGUE_ER9)
-        xfip_raw = pitcher_xstats.get("xfip")
-        xfip = float(xfip_raw) if xfip_raw is not None else None
+        era  = float(pitcher_xstats.get("era") or LEAGUE_ER9)
 
-        # Improvement #1 — 3-way ERA blend
+        # Improvement #6: compute xFIP from components if available
+        xfip_stored = pitcher_xstats.get("xfip")
+        if xfip_stored is not None:
+            xfip = float(xfip_stored)
+        else:
+            # Compute from FB% and HR/FB rate stored in pitcher_xstats
+            fb_pct   = pitcher_xstats.get("fb_pct")
+            hr_fb    = pitcher_xstats.get("hr_fb_rate")
+            ip_total = float(pitcher_xstats.get("ip_total") or 0)
+            k_total  = float(pitcher_xstats.get("tbf") or 0) * float(pitcher_xstats.get("k_pct") or 0)
+            bb_total = float(pitcher_xstats.get("tbf") or 0) * float(pitcher_xstats.get("bb_pct") or 0)
+            xfip = compute_xfip(k_total, bb_total, 0, ip_total, fb_pct, hr_fb) if ip_total > 20 else None
+
+        # Improvement #1 in ERA blend: use xFIP when computed
         if xfip is not None:
             true_era = 0.55 * xera + 0.30 * xfip + 0.15 * era
         else:
-            # xFIP not yet in DB: fall back to original 2-way, but de-weight ERA further
             true_era = 0.75 * xera + 0.25 * era
 
         xwoba_against = float(pitcher_xstats.get("est_woba") or LEAGUE_XWOBA)
+        h_per_pa = (0.7 * float(pitcher_xstats.get("est_ba") or LEAGUE_XBA)
+                    + 0.3 * float(pitcher_xstats.get("ba") or LEAGUE_XBA)
+                    + woba_delta * 0.5)
 
-        # Hits per PA (unchanged)
-        h_per_pa = (
-            0.7 * float(pitcher_xstats.get("est_ba") or LEAGUE_XBA)
-            + 0.3 * float(pitcher_xstats.get("ba")   or LEAGUE_XBA)
-            + woba_delta * 0.5
-        )
-
-        # Improvement #4 — K% from real Statcast k_pct, not xwOBA-derived scaler
+        # K%: real data preferred
         raw_k_pct = pitcher_xstats.get("k_pct")
         if raw_k_pct is not None:
-            k_pct_base = float(raw_k_pct)
-            # Soft blend: 80% pitcher's own rate, 20% xwOBA-inferred (sanity check)
             k_scaler = (LEAGUE_XWOBA - xwoba_against) * 0.40
-            k_pct = 0.80 * k_pct_base + 0.20 * (LEAGUE_K_PCT + k_scaler)
+            k_pct = 0.80 * float(raw_k_pct) + 0.20 * (LEAGUE_K_PCT + k_scaler)
         else:
-            # Fallback: xwOBA-derived (v2 behaviour)
-            k_scaler = (LEAGUE_XWOBA - xwoba_against) * 0.40
-            k_pct = LEAGUE_K_PCT + k_scaler
+            k_pct = LEAGUE_K_PCT + (LEAGUE_XWOBA - xwoba_against) * 0.40
 
-        # Apply lineup K-vulnerability adjustment
         lineup_k = opp_lineup_k_pct(opp_lineup, hitter_xstats)
         if lineup_k is not None:
-            k_factor = max(0.85, min(1.15, lineup_k / LEAGUE_K_PCT))
-            k_pct *= k_factor
+            k_pct *= max(0.85, min(1.15, lineup_k / LEAGUE_K_PCT))
         k_pct = max(0.14, min(0.35, k_pct))
 
-        # Improvement #3 — BB/9 from real Statcast with Bayesian shrinkage
+        # BB9: real data with Bayesian shrinkage
         raw_bb9 = pitcher_xstats.get("bb9")
         if raw_bb9 is not None:
-            raw_bb9 = float(raw_bb9)
             weight = min(1.0, pa / BB9_SHRINK_N)
-            bb9 = weight * raw_bb9 + (1 - weight) * LEAGUE_BB9
+            bb9 = weight * float(raw_bb9) + (1 - weight) * LEAGUE_BB9
         else:
-            # Fallback: ERA-tier heuristic (v2 behaviour)
-            if true_era > 5.5:
-                bb9 = LEAGUE_BB9 * 1.20
-            elif true_era < 3.0:
-                bb9 = LEAGUE_BB9 * 0.90
-            else:
-                bb9 = LEAGUE_BB9
+            bb9 = LEAGUE_BB9 * (1.20 if true_era > 5.5 else 0.90 if true_era < 3.0 else 1.0)
 
         source = "statcast"
+        high_variance = true_era > 5.0
 
-        # Improvement #2 — Continuous IP leash as fallback; pitch-budget preferred
+        # IP: pitch budget preferred, continuous leash as fallback
         fallback_ip = _continuous_ip_leash(true_era)
         avg_pps  = pitcher_xstats.get("avg_pitches_per_start")
         pit_ppa  = pitcher_xstats.get("pitches_per_pa")
         lineup_ppa = _lineup_pitches_per_pa(opp_lineup, hitter_xstats)
         ip = _project_ip_pitch_budget(avg_pps, pit_ppa, lineup_ppa, fallback_ip)
 
-        # Improvement #7 — High-variance flag: apply IP haircut for shaky starters
-        high_variance = true_era > 5.0
+        # Improvement #4: days rest IP adjustment
+        ip += _days_rest_ip_adj(days_rest)
+        ip = max(3.0, min(8.5, ip))
+
+        # Improvement #2 from v3: high-variance IP haircut
         if high_variance:
-            ip = ip * 0.88   # ~12% IP haircut reflecting early-hook probability
+            ip *= 0.88
 
-    # ---- Weather + park ----
+    # Weather + park
     cf_az   = float(park.get("cf_azimuth_deg") or 0)
-    is_dome = (park.get("roof_type") or "").lower() in ("dome", "closed")
-    if is_dome or not weather:
-        wx_run = 1.0
-    else:
-        wx_run = (
-            temp_run_factor(weather.get("temp_f"))
-            * wind_run_factor(weather.get("wind_mph"), weather.get("wind_deg"), cf_az)
-        )
-
+    is_dome = (park.get("roof_type") or "").lower() in ("dome","closed")
+    wx_run  = 1.0 if (is_dome or not weather) else (
+        temp_run_factor(weather.get("temp_f"))
+        * wind_run_factor(weather.get("wind_mph"), weather.get("wind_deg"), cf_az)
+    )
     pf_runs = float(park.get("pf_runs") or 100) / 100.0
     pf_so   = float(park.get("pf_so")   or 100) / 100.0
     pf_bb   = float(park.get("pf_bb")   or 100) / 100.0
 
-    # ---- Roll up ----
     h9      = h_per_pa * 38 * wx_run * pf_runs
     er9     = (true_era + woba_delta * 30) * wx_run * pf_runs
     k9      = k_pct * 37.5 * pf_so
@@ -488,35 +434,27 @@ def project_pitcher(
     ip_adj    = ip * leash_adj
 
     return PitcherProjection(
-        pitcher_mlb_id=pitcher_mlb_id,
-        last_first=pitcher_name,
-        team_code=team_code,
-        opp_team_code=opp_team_code,
-        hand=pitcher_hand,
-        source=source,
-        pa_sample=pa,
-        era=round(era, 2)           if era           is not None else None,
-        xera=round(xera, 2)         if xera          is not None else None,
-        xfip=round(xfip, 2)         if xfip          is not None else None,
-        true_era=round(true_era, 2),
-        xwoba_against=round(xwoba_against, 4) if xwoba_against is not None else None,
-        opp_lineup_xwoba=round(opp_xwoba, 4),
-        used_actual_lineup=used_actual,
-        used_l15_blend=used_l15,
-        ip=round(ip_adj, 2),
-        outs=round(ip_adj * 3, 1),
-        hits=round((h9 / 9) * ip_adj, 2),
-        er=round((er9 / 9) * ip_adj, 2),
-        bb=round((bb9_adj / 9) * ip_adj, 2),
-        k=round((k9 / 9) * ip_adj, 2),
-        wx_factor=round(wx_run, 3),
-        pf_factor=round(pf_runs, 3),
+        pitcher_mlb_id=pitcher_mlb_id, last_first=pitcher_name,
+        team_code=team_code, opp_team_code=opp_team_code, hand=pitcher_hand,
+        source=source, pa_sample=pa,
+        era=round(era,2)  if era  is not None else None,
+        xera=round(xera,2) if xera is not None else None,
+        xfip=round(xfip,2) if xfip is not None else None,
+        true_era=round(true_era,2),
+        xwoba_against=round(xwoba_against,4) if xwoba_against is not None else None,
+        opp_lineup_xwoba=round(opp_xwoba,4),
+        used_actual_lineup=used_actual, used_l15_blend=used_l15,
+        ip=round(ip_adj,2), outs=round(ip_adj*3,1),
+        hits=round((h9/9)*ip_adj,2), er=round((er9/9)*ip_adj,2),
+        bb=round((bb9_adj/9)*ip_adj,2), k=round((k9/9)*ip_adj,2),
+        wx_factor=round(wx_run,3), pf_factor=round(pf_runs,3),
         high_variance_flag=high_variance,
+        days_rest=int(days_rest) if days_rest is not None else None,
     )
 
 
 # =============================================================================
-# Game total
+# Game total — Improvement #5: offensive strength scaler
 # =============================================================================
 
 def project_game_total(
@@ -530,49 +468,117 @@ def project_game_total(
     league_bullpen_er9: float = 4.0,
 ) -> tuple[float, float, float, float]:
     """
-    Combine starter projections into full game and F5 totals.
-
-    Improvement #7: high-variance starters get +0.5 ER added to their team's
-    bullpen contribution (more innings pitched by worse relievers when the ace
-    gets yanked in the 4th).
+    Improvement #3: 7-day bullpen ERA blended in _compute_team_bullpen_er9.
+    Improvement #5: offensive strength scaler on each team's run total.
 
     Returns (full_game_total, f5_total, home_runs, away_runs).
     """
     away_bp_er9 = _compute_team_bullpen_er9(away_team_xstats, league_bullpen_er9)
     home_bp_er9 = _compute_team_bullpen_er9(home_team_xstats, league_bullpen_er9)
 
-    # Park + weather for bullpen innings
     pf_runs = float((park or {}).get("pf_runs") or 100) / 100.0
     cf_az   = float((park or {}).get("cf_azimuth_deg") or 0)
-    is_dome = ((park or {}).get("roof_type") or "").lower() in ("dome", "closed")
-    if is_dome or not weather:
-        wx_run = 1.0
-    else:
-        wx_run = (
-            temp_run_factor(weather.get("temp_f"))
-            * wind_run_factor(weather.get("wind_mph"), weather.get("wind_deg"), cf_az)
-        )
+    is_dome = ((park or {}).get("roof_type") or "").lower() in ("dome","closed")
+    wx_run  = 1.0 if (is_dome or not weather) else (
+        temp_run_factor(weather.get("temp_f"))
+        * wind_run_factor(weather.get("wind_mph"), weather.get("wind_deg"), cf_az)
+    )
     park_wx = pf_runs * wx_run
 
     away_bp_innings = max(0.0, 9 - away_proj.ip)
     home_bp_innings = max(0.0, 9 - home_proj.ip)
 
-    # Improvement #7 — high-variance padding
-    away_bp_padding = 0.5 if away_proj.high_variance_flag else 0.0
-    home_bp_padding = 0.5 if home_proj.high_variance_flag else 0.0
+    # High-variance padding
+    away_bp_pad = 0.5 if away_proj.high_variance_flag else 0.0
+    home_bp_pad = 0.5 if home_proj.high_variance_flag else 0.0
 
-    away_bp_er = away_bp_innings * (away_bp_er9 / 9) * park_wx + away_bp_padding
-    home_bp_er = home_bp_innings * (home_bp_er9 / 9) * park_wx + home_bp_padding
+    away_bp_er = away_bp_innings * (away_bp_er9 / 9) * park_wx + away_bp_pad
+    home_bp_er = home_bp_innings * (home_bp_er9 / 9) * park_wx + home_bp_pad
 
-    # home_runs = runs scored by home offense = away pitching (starter + pen) allowed
-    home_runs = away_proj.er + away_bp_er
-    away_runs = home_proj.er + home_bp_er
+    # Improvement #5: offensive scaler
+    # home_runs = runs scored by home offense (away pitching allows)
+    # Scale by HOME team's offensive strength
+    home_off_scaler = _offensive_strength_scaler(home_team_xstats)
+    away_off_scaler = _offensive_strength_scaler(away_team_xstats)
+
+    home_runs = (away_proj.er + away_bp_er) * home_off_scaler
+    away_runs = (home_proj.er + home_bp_er) * away_off_scaler
 
     full_total = home_runs + away_runs
 
-    # F5: starter ER scaled to 5 IP
-    f5_away = (away_proj.er / away_proj.ip) * min(5, away_proj.ip) if away_proj.ip > 0 else 0
-    f5_home = (home_proj.er / home_proj.ip) * min(5, home_proj.ip) if home_proj.ip > 0 else 0
+    f5_away = (away_proj.er / away_proj.ip) * min(5, away_proj.ip) * away_off_scaler if away_proj.ip > 0 else 0
+    f5_home = (home_proj.er / home_proj.ip) * min(5, home_proj.ip) * home_off_scaler if home_proj.ip > 0 else 0
     f5_total = f5_away + f5_home
 
-    return round(full_total, 2), round(f5_total, 2), round(home_runs, 2), round(away_runs, 2)
+    return round(full_total,2), round(f5_total,2), round(home_runs,2), round(away_runs,2)
+
+
+# =============================================================================
+# Improvement #1 — HFA on win probability (called from orchestrator)
+# =============================================================================
+
+def apply_hfa(home_win_prob: float, away_win_prob: float,
+              hfa: float = HOME_FIELD_ADVANTAGE) -> tuple[float, float]:
+    """
+    Add home field advantage to Skellam win probabilities and re-normalise.
+    hfa: probability points to add to home team (default 2.5pp).
+    """
+    home_adj = min(0.99, home_win_prob + hfa)
+    away_adj = max(0.01, away_win_prob - hfa)
+    # Re-normalise in case of floating point drift
+    total = home_adj + away_adj
+    return round(home_adj / total, 4), round(away_adj / total, 4)
+
+
+# =============================================================================
+# Improvement #2 — ML reliability gate (called from orchestrator)
+# =============================================================================
+
+def ml_edge_reliable(away_proj: PitcherProjection,
+                     home_proj: PitcherProjection) -> bool:
+    """
+    Returns False if either starter is low_sample or league_avg.
+    ML edges on fallback projections are noise — skip them.
+    """
+    return away_proj.is_reliable and home_proj.is_reliable
+
+
+# =============================================================================
+# Improvement #8 — Hitter props stub
+# =============================================================================
+
+def project_hitter_hr_prob(
+    hitter_xstats: dict,
+    pitcher_proj: PitcherProjection,
+    park: dict,
+    weather: dict,
+) -> Optional[float]:
+    """
+    Estimate P(hitter hits HR in this game) using:
+      - Hitter HR/FB rate (from hitter_xstats)
+      - Pitcher xFIP-implied HR rate against
+      - Park HR factor
+      - Weather run factor (proxy for carry)
+
+    Returns probability or None if insufficient data.
+    Stub: returns None until hitter_xstats.hr_fb_rate is populated.
+    """
+    hr_fb = hitter_xstats.get("hr_fb_rate")
+    if hr_fb is None:
+        return None
+
+    pf_hr = float(park.get("pf_hr") or 100) / 100.0
+    cf_az = float(park.get("cf_azimuth_deg") or 0)
+    is_dome = (park.get("roof_type") or "").lower() in ("dome","closed")
+    wx = 1.0 if (is_dome or not weather) else (
+        temp_run_factor(weather.get("temp_f"))
+        * wind_run_factor(weather.get("wind_mph"), weather.get("wind_deg"), cf_az)
+    )
+
+    # Expected PA ~ 4.0 for average hitter
+    expected_pa = 4.0
+    fb_pct = hitter_xstats.get("fb_pct") or LEAGUE_FB_PCT
+    expected_fb = expected_pa * float(fb_pct)
+    hr_prob = expected_fb * float(hr_fb) * pf_hr * wx
+
+    return round(min(hr_prob, 0.99), 4)
