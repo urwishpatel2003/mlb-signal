@@ -517,17 +517,17 @@ function DayCard({day}){
           <span className="day-rate">{rate}%</span>
           <span className={profit>=0?'day-units pos':'day-units neg'}>{fmtSign(profit)}u</span>
         </div>
-        <span className="day-toggle">{open?'\u25b2':'\u25bc'}</span>
+        <span className="day-toggle">{open?'▲':'▼'}</span>
       </div>
       {open&&<div className="day-sections">
         {buckets.map((b,bi)=>{
-          const bPushStr=b.pushes>0?('-'+b.pushes):'';
+          const bPush=b.pushes>0?('-'+b.pushes):'';
           return (
             <div key={bi} className="day-section">
               <div className="day-section-header">
                 <span className="section-name">{b.category} {b.lean}</span>
                 <span className="section-stats">
-                  {b.wins}-{b.losses}{bPushStr}&nbsp;
+                  {b.wins}-{b.losses}{bPush}&nbsp;
                   <span className={b.profit_units>=0?'pos':'neg'}>{fmtSign(b.profit_units)}u</span>
                 </span>
               </div>
@@ -543,75 +543,6 @@ function DayCard({day}){
             </div>
           );
         })}
-      </div>}
-    </div>
-  );
-}){
-  const [open,setOpen]=useState(false);
-  const s=day.summary||{};
-  const wins=s.wins||0;
-  const losses=s.losses||0;
-  const pushes=s.pushes||0;
-  const profit=s.profit_units||0;
-  const buckets=day.buckets||[];
-  const rate=wins+losses>0?Math.round(wins/(wins+losses)*100):0;
-  return (
-    <div className={`day-card ${profit>=0?'pos':'neg'}`}>
-      <div className="day-header" onClick={()=>setOpen(!open)}>
-        <span className="day-date">{day.run_date}</span>
-        <div className="day-summary">
-          <span className="day-wl">{wins}-{losses}{pushes>0?`-${pushes}`:''}</span>
-          <span className="day-rate">{rate}%</span>
-          <span className={`day-units ${profit>=0?'pos':'neg'}`}>{fmtSign(profit)}u</span>
-        </div>
-        <span className="day-toggle">{open?'▲':'▼'}</span>
-      </div>
-      {open&&<div className="day-sections">
-        {buckets.map((b,bi)=>(
-          <div key={bi} className="day-section">
-            <div className="day-section-header">
-              <span className="section-name">{b.category} {b.lean}</span>
-              <span className="section-stats">
-                {b.wins}-{b.losses}{b.pushes>0?`-${b.pushes}`:''}&nbsp;
-                <span className={b.profit_units>=0?'pos':'neg'}>{fmtSign(b.profit_units)}u</span>
-              </span>
-            </div>
-            {(b.plays||[]).map((p,i)=>(
-              <div key={i} className={`play-row result-${(p.result||'').toLowerCase()}`}>
-                <span className="play-subject">{p.subject}</span>
-                <span className="play-line">{p.line}</span>
-                <span className="play-actual">{p.actual_value!=null?p.actual_value:'-'}</span>
-                <span className={`play-result res-${(p.result||'').toLowerCase()}`}>{p.result}</span>
-                <span className={`play-profit ${(p.profit_units||0)>=0?'pos':'neg'}`}>{fmtSign(p.profit_units||0)}u</span>
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>}
-    </div>
-  );
-}){
-  const [open,setOpen]=useState(false);
-  const plays=day.plays||[];
-  const wins=plays.filter(p=>p.result==='WIN').length;
-  const losses=plays.filter(p=>p.result==='LOSS').length;
-  const profit=plays.reduce((s,p)=>s+(p.profit_units||0),0);
-  return (
-    <div className="day-card">
-      <div className="day-header" onClick={()=>setOpen(!open)}>
-        <span className="day-date">{day.run_date}</span>
-        <span className="day-record">{wins}-{losses}</span>
-        <span className={`day-profit ${profit>=0?'pos':'neg'}`}>{fmtSign(profit)}u</span>
-        <span className="day-toggle">{open?'▲':'▼'}</span>
-      </div>
-      {open&&<div className="day-plays">
-        {plays.map((p,i)=>(
-          <div key={i} className={`play-row result-${p.result?.toLowerCase()}`}>
-            <span className="play-subject">{p.category} {p.lean} {p.line}</span>
-            <span className={`play-result res-${p.result?.toLowerCase()}`}>{p.result}</span>
-            <span className={`play-profit ${(p.profit_units||0)>=0?'pos':'neg'}`}>{fmtSign(p.profit_units||0)}u</span>
-          </div>
-        ))}
       </div>}
     </div>
   );
