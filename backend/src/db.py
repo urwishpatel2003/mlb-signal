@@ -192,15 +192,19 @@ def insert_game_projection(run_id, g):
     execute(sql, {**g,"run_id":run_id})
 
 def insert_edge(run_id, e):
+    # Ensure over_price/under_price keys exist (default None for edges without prices)
     row = fetchone("""INSERT INTO edges (
           run_id,game_pk,kind,category,pitcher_mlb_id,pitcher_name,
           team_code,opp_team_code,line,proj_value,edge,lean,
-          confidence_tier,conviction_pct,flagged,notes
+          confidence_tier,conviction_pct,flagged,notes,
+          over_price,under_price
         ) VALUES (
           %(run_id)s,%(game_pk)s,%(kind)s,%(category)s,%(pitcher_mlb_id)s,%(pitcher_name)s,
           %(team_code)s,%(opp_team_code)s,%(line)s,%(proj_value)s,%(edge)s,%(lean)s,
-          %(confidence_tier)s,%(conviction_pct)s,%(flagged)s,%(notes)s
-        ) RETURNING edge_id""", {**e,"run_id":run_id})
+          %(confidence_tier)s,%(conviction_pct)s,%(flagged)s,%(notes)s,
+          %(over_price)s,%(under_price)s
+        ) RETURNING edge_id""",
+        {"over_price": None, "under_price": None, **e, "run_id": run_id})
     return int(row["edge_id"])
 
 def get_latest_run(run_date):
