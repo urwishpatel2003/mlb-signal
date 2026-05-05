@@ -97,7 +97,7 @@ def _slate_for_date(slate_date: str) -> dict:
     run_id = run["run_id"]
     games_raw = db.fetchall(
         """
-        SELECT g.*, gp.proj_total, gp.proj_f5, gp.edge_total, gp.lean
+        SELECT g.*, gp.proj_total, gp.proj_f5, gp.proj_home_runs, gp.proj_away_runs, gp.edge_total, gp.lean, gp.market_f5_total, gp.away_ml, gp.home_ml, gp.home_win_prob, gp.away_win_prob, gp.ml_edge_team
         FROM games g
         LEFT JOIN LATERAL (
             SELECT proj_total, proj_f5, proj_home_runs, proj_away_runs, edge_total, lean, 'SENTINEL_CHECK' AS sentinel_test
@@ -564,3 +564,4 @@ def scheduler_status(token: str):
         return {"ok": True, "jobs": jobs}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
