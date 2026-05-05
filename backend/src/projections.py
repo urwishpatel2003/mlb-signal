@@ -334,7 +334,13 @@ def project_pitcher(
 ) -> PitcherProjection:
     opp_xwoba, used_actual, used_l15 = opp_lineup_xwoba(
         opp_lineup, pitcher_hand, hitter_xstats, team_xwoba_fallback, pa_threshold=20)
-    woba_delta = opp_xwoba - LEAGUE_XWOBA
+    # Blend pitcher's own suppression ability with lineup quality.
+    # Reduces the raw lineup xwOBA effect for elite pitchers (low xwOBA-against)
+    # and amplifies it for bad pitchers (high xwOBA-against).
+    # Use pitcher xwOBA-against when available, else fall back to league average.
+    pitcher_xwoba_against = float((pitcher_xstats or {}).get("est_woba") or LEAGUE_XWOBA)
+    effective_opp_xwoba = 0.60 * pitcher_xwoba_against + 0.40 * opp_xwoba
+    woba_delta = effective_opp_xwoba - LEAGUE_XWOBA
 
     pa = int((pitcher_xstats or {}).get("pa") or 0)
     days_rest = (pitcher_xstats or {}).get("days_rest")
@@ -373,7 +379,7 @@ def project_pitcher(
         xwoba_against = float(pitcher_xstats.get("est_woba") or LEAGUE_XWOBA)
         h_per_pa = (0.7 * float(pitcher_xstats.get("est_ba") or LEAGUE_XBA)
                     + 0.3 * float(pitcher_xstats.get("ba") or LEAGUE_XBA)
-                    + woba_delta * 0.5)
+                    + woba_delta * 0.25)
 
         # K%: real data preferred
         raw_k_pct = pitcher_xstats.get("k_pct")
@@ -426,7 +432,7 @@ def project_pitcher(
     pf_bb   = float(park.get("pf_bb")   or 100) / 100.0
 
     h9      = h_per_pa * 38 * wx_run * pf_runs
-    er9     = (true_era + woba_delta * 30) * wx_run * pf_runs
+    er9     = (true_era + woba_delta * 15) * wx_run * pf_runs
     k9      = k_pct * 37.5 * pf_so
     bb9_adj = bb9 * pf_bb
 
