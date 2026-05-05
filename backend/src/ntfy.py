@@ -123,3 +123,4 @@ def send_grader_summary(snapshot_date: str, perf: dict) -> bool:
         f"Model MAE: {perf.get('model_mae', 0):.2f} vs Market MAE: {perf.get('market_mae', 0):.2f}",
     ]
     return _send(title, "\n".join(lines), priority="default")
+
