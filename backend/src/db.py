@@ -1,31 +1,24 @@
 """
-Database connection + thin repository layer.
-
-We use psycopg (psycopg3) directly with a single shared connection pool. No ORM.
-The schema is small and stable; raw SQL is more honest about what's happening
-and gives us better error messages when migrations need to evolve.
-
-For local dev: set DATABASE_URL in .env (postgres://...). For Railway: it's
-injected automatically via the Postgres plugin.
+Database connection + thin repository layer — v3.1
+Adds F5 + ML fields to insert_game_projection and insert_edge (ml_edge_pct).
 """
 from __future__ import annotations
 import os
 import logging
 from contextlib import contextmanager
-from typing import Optional, Iterator, Any
+from typing import Optional, Iterator
 import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 log = logging.getLogger(__name__)
-
 _pool: Optional[ConnectionPool] = None
 
 
 def _dsn() -> str:
     dsn = os.environ.get("DATABASE_URL")
     if not dsn:
-        raise RuntimeError("DATABASE_URL not set. Required for db connection.")
+        raise RuntimeError("DATABASE_URL not set.")
     if dsn.startswith("postgres://"):
         dsn = "postgresql://" + dsn[len("postgres://"):]
     return dsn
@@ -53,26 +46,26 @@ def conn() -> Iterator[psycopg.Connection]:
         yield c
 
 
-def fetchall(sql: str, params: tuple | dict | None = None) -> list[dict]:
+def fetchall(sql: str, params=None) -> list[dict]:
     with conn() as c, c.cursor() as cur:
         cur.execute(sql, params or ())
         return cur.fetchall()
 
 
-def fetchone(sql: str, params: tuple | dict | None = None) -> Optional[dict]:
+def fetchone(sql: str, params=None) -> Optional[dict]:
     with conn() as c, c.cursor() as cur:
         cur.execute(sql, params or ())
         return cur.fetchone()
 
 
-def execute(sql: str, params: tuple | dict | None = None) -> int:
+def execute(sql: str, params=None) -> int:
     with conn() as c, c.cursor() as cur:
         cur.execute(sql, params or ())
         c.commit()
         return cur.rowcount
 
 
-def execute_many(sql: str, rows: list[tuple] | list[dict]) -> int:
+def execute_many(sql: str, rows: list) -> int:
     if not rows:
         return 0
     with conn() as c, c.cursor() as cur:
@@ -84,9 +77,7 @@ def execute_many(sql: str, rows: list[tuple] | list[dict]) -> int:
 def upsert_pitcher_xstats(rows: list[dict]) -> int:
     """
     Bulk upsert by (mlb_id, season_year).
-    NOTE: xfip, k_pct, bb9 are NOT written here — they come from
-    _refresh_pitcher_budget() which runs as a separate UPDATE pass.
-    This avoids overwriting budget data with NULL on each Savant refresh.
+    xfip, k_pct, bb9 come from _refresh_pitcher_budget() — not overwritten here.
     """
     if not rows:
         return 0
@@ -99,28 +90,16 @@ def upsert_pitcher_xstats(rows: list[dict]) -> int:
            %(ba)s, %(est_ba)s, %(slg)s, %(est_slg)s,
            %(woba)s, %(est_woba)s, %(era)s, %(xera)s, now())
         ON CONFLICT (mlb_id, season_year) DO UPDATE SET
-          last_first   = EXCLUDED.last_first,
-          pa           = EXCLUDED.pa,
-          bip          = EXCLUDED.bip,
-          ba           = EXCLUDED.ba,
-          est_ba       = EXCLUDED.est_ba,
-          slg          = EXCLUDED.slg,
-          est_slg      = EXCLUDED.est_slg,
-          woba         = EXCLUDED.woba,
-          est_woba     = EXCLUDED.est_woba,
-          era          = EXCLUDED.era,
-          xera         = EXCLUDED.xera,
-          refreshed_at = now();
+          last_first=EXCLUDED.last_first, pa=EXCLUDED.pa, bip=EXCLUDED.bip,
+          ba=EXCLUDED.ba, est_ba=EXCLUDED.est_ba, slg=EXCLUDED.slg,
+          est_slg=EXCLUDED.est_slg, woba=EXCLUDED.woba, est_woba=EXCLUDED.est_woba,
+          era=EXCLUDED.era, xera=EXCLUDED.xera, refreshed_at=now();
     """
     return execute_many(sql, rows)
 
 
 def upsert_hitter_xstats(rows: list[dict]) -> int:
-    """
-    Bulk upsert by (mlb_id, season_year).
-    NOTE: l15_woba is NOT written here — it comes from _refresh_hitter_budget()
-    which runs as a separate UPDATE pass using COALESCE to preserve existing values.
-    """
+    """l15_woba preserved — written by _refresh_hitter_budget() separately."""
     if not rows:
         return 0
     sql = """
@@ -129,18 +108,12 @@ def upsert_hitter_xstats(rows: list[dict]) -> int:
            woba, est_woba, refreshed_at)
         VALUES
           (%(mlb_id)s, %(season_year)s, %(last_first)s, %(pa)s,
-           %(ba)s, %(est_ba)s, %(slg)s, %(est_slg)s,
-           %(woba)s, %(est_woba)s, now())
+           %(ba)s, %(est_ba)s, %(slg)s, %(est_slg)s, %(woba)s, %(est_woba)s, now())
         ON CONFLICT (mlb_id, season_year) DO UPDATE SET
-          last_first   = EXCLUDED.last_first,
-          pa           = EXCLUDED.pa,
-          ba           = EXCLUDED.ba,
-          est_ba       = EXCLUDED.est_ba,
-          slg          = EXCLUDED.slg,
-          est_slg      = EXCLUDED.est_slg,
-          woba         = EXCLUDED.woba,
-          est_woba     = EXCLUDED.est_woba,
-          refreshed_at = now();
+          last_first=EXCLUDED.last_first, pa=EXCLUDED.pa,
+          ba=EXCLUDED.ba, est_ba=EXCLUDED.est_ba, slg=EXCLUDED.slg,
+          est_slg=EXCLUDED.est_slg, woba=EXCLUDED.woba, est_woba=EXCLUDED.est_woba,
+          refreshed_at=now();
     """
     return execute_many(sql, rows)
 
@@ -154,10 +127,8 @@ def upsert_team_bullpen_stats(rows: list[dict]) -> int:
         VALUES
           (%(team_code)s, %(season_year)s, %(bullpen_era)s, %(bullpen_xera)s, %(bullpen_ip)s, now())
         ON CONFLICT (team_code, season_year) DO UPDATE SET
-          bullpen_era  = EXCLUDED.bullpen_era,
-          bullpen_xera = EXCLUDED.bullpen_xera,
-          bullpen_ip   = EXCLUDED.bullpen_ip,
-          refreshed_at = now();
+          bullpen_era=EXCLUDED.bullpen_era, bullpen_xera=EXCLUDED.bullpen_xera,
+          bullpen_ip=EXCLUDED.bullpen_ip, refreshed_at=now();
     """
     return execute_many(sql, rows)
 
@@ -166,15 +137,10 @@ def upsert_team_xstats(rows: list[dict]) -> int:
     if not rows:
         return 0
     sql = """
-        INSERT INTO team_xstats
-          (team_code, season_year, pa, woba, est_woba, refreshed_at)
-        VALUES
-          (%(team_code)s, %(season_year)s, %(pa)s, %(woba)s, %(est_woba)s, now())
+        INSERT INTO team_xstats (team_code, season_year, pa, woba, est_woba, refreshed_at)
+        VALUES (%(team_code)s, %(season_year)s, %(pa)s, %(woba)s, %(est_woba)s, now())
         ON CONFLICT (team_code, season_year) DO UPDATE SET
-          pa           = EXCLUDED.pa,
-          woba         = EXCLUDED.woba,
-          est_woba     = EXCLUDED.est_woba,
-          refreshed_at = now();
+          pa=EXCLUDED.pa, woba=EXCLUDED.woba, est_woba=EXCLUDED.est_woba, refreshed_at=now();
     """
     return execute_many(sql, rows)
 
@@ -185,63 +151,43 @@ def upsert_game(g: dict) -> None:
           game_pk, game_date, game_time_et, status,
           away_team, home_team, away_record, home_record, park_code,
           away_pitcher_id, home_pitcher_id, away_pitcher_hand, home_pitcher_hand,
-          away_pitcher_name, home_pitcher_name,
-          away_score, home_score,
+          away_pitcher_name, home_pitcher_name, away_score, home_score,
           weather_condition, weather_temp_f, weather_wind, weather_wind_mph,
-          weather_wind_deg, weather_precip_pct,
-          refreshed_at
+          weather_wind_deg, weather_precip_pct, refreshed_at
         ) VALUES (
           %(game_pk)s, %(game_date)s, %(game_time_et)s, %(status)s,
           %(away_team)s, %(home_team)s, %(away_record)s, %(home_record)s, %(park_code)s,
           %(away_pitcher_id)s, %(home_pitcher_id)s, %(away_pitcher_hand)s, %(home_pitcher_hand)s,
-          %(away_pitcher_name)s, %(home_pitcher_name)s,
-          %(away_score)s, %(home_score)s,
+          %(away_pitcher_name)s, %(home_pitcher_name)s, %(away_score)s, %(home_score)s,
           %(weather_condition)s, %(weather_temp_f)s, %(weather_wind)s, %(weather_wind_mph)s,
-          %(weather_wind_deg)s, %(weather_precip_pct)s,
-          now()
+          %(weather_wind_deg)s, %(weather_precip_pct)s, now()
         )
         ON CONFLICT (game_pk) DO UPDATE SET
-          game_date          = EXCLUDED.game_date,
-          game_time_et       = EXCLUDED.game_time_et,
-          status             = EXCLUDED.status,
-          away_record        = EXCLUDED.away_record,
-          home_record        = EXCLUDED.home_record,
-          away_pitcher_id    = EXCLUDED.away_pitcher_id,
-          home_pitcher_id    = EXCLUDED.home_pitcher_id,
-          away_pitcher_hand  = EXCLUDED.away_pitcher_hand,
-          home_pitcher_hand  = EXCLUDED.home_pitcher_hand,
-          away_pitcher_name  = EXCLUDED.away_pitcher_name,
-          home_pitcher_name  = EXCLUDED.home_pitcher_name,
-          away_score         = EXCLUDED.away_score,
-          home_score         = EXCLUDED.home_score,
-          weather_condition  = EXCLUDED.weather_condition,
-          weather_temp_f     = EXCLUDED.weather_temp_f,
-          weather_wind       = EXCLUDED.weather_wind,
-          weather_wind_mph   = EXCLUDED.weather_wind_mph,
-          weather_wind_deg   = EXCLUDED.weather_wind_deg,
-          weather_precip_pct = EXCLUDED.weather_precip_pct,
-          refreshed_at       = now();
+          game_date=EXCLUDED.game_date, game_time_et=EXCLUDED.game_time_et,
+          status=EXCLUDED.status, away_record=EXCLUDED.away_record,
+          home_record=EXCLUDED.home_record,
+          away_pitcher_id=EXCLUDED.away_pitcher_id, home_pitcher_id=EXCLUDED.home_pitcher_id,
+          away_pitcher_hand=EXCLUDED.away_pitcher_hand, home_pitcher_hand=EXCLUDED.home_pitcher_hand,
+          away_pitcher_name=EXCLUDED.away_pitcher_name, home_pitcher_name=EXCLUDED.home_pitcher_name,
+          away_score=EXCLUDED.away_score, home_score=EXCLUDED.home_score,
+          weather_condition=EXCLUDED.weather_condition, weather_temp_f=EXCLUDED.weather_temp_f,
+          weather_wind=EXCLUDED.weather_wind, weather_wind_mph=EXCLUDED.weather_wind_mph,
+          weather_wind_deg=EXCLUDED.weather_wind_deg, weather_precip_pct=EXCLUDED.weather_precip_pct,
+          refreshed_at=now();
     """
     execute(sql, g)
 
 
 def replace_lineups(game_pk: int, team_code: str, spots: list[dict]) -> None:
-    """Atomic replacement: delete existing lineup for this team and insert fresh."""
     with conn() as c, c.cursor() as cur:
-        cur.execute(
-            "DELETE FROM lineup_spots WHERE game_pk = %s AND team_code = %s",
-            (game_pk, team_code)
-        )
+        cur.execute("DELETE FROM lineup_spots WHERE game_pk=%s AND team_code=%s",
+                    (game_pk, team_code))
         if spots:
             cur.executemany(
-                """
-                INSERT INTO lineup_spots
-                  (game_pk, team_code, batting_order, mlb_id, full_name,
-                   last_first, bat_side, position, refreshed_at)
-                VALUES
-                  (%(game_pk)s, %(team_code)s, %(batting_order)s, %(mlb_id)s,
-                   %(full_name)s, %(last_first)s, %(bat_side)s, %(position)s, now())
-                """,
+                """INSERT INTO lineup_spots
+                   (game_pk,team_code,batting_order,mlb_id,full_name,last_first,bat_side,position,refreshed_at)
+                   VALUES (%(game_pk)s,%(team_code)s,%(batting_order)s,%(mlb_id)s,
+                           %(full_name)s,%(last_first)s,%(bat_side)s,%(position)s,now())""",
                 [{**s, "game_pk": game_pk, "team_code": team_code} for s in spots]
             )
         c.commit()
@@ -250,18 +196,14 @@ def replace_lineups(game_pk: int, team_code: str, spots: list[dict]) -> None:
 def create_projection_run(run_date: str, model_version: str,
                            trigger: str, n_games: int) -> int:
     row = fetchone(
-        """
-        INSERT INTO projection_runs (run_date, model_version, trigger, n_games)
-        VALUES (%s, %s, %s, %s)
-        RETURNING run_id
-        """,
+        "INSERT INTO projection_runs (run_date,model_version,trigger,n_games) "
+        "VALUES (%s,%s,%s,%s) RETURNING run_id",
         (run_date, model_version, trigger, n_games),
     )
-    return int(row["run_id"])  # type: ignore
+    return int(row["run_id"])
 
 
 def insert_pitcher_projection(run_id: int, p: dict) -> None:
-    """Insert a pitcher projection row. Includes v3 fields: xfip, used_l15_blend, high_variance_flag."""
     sql = """
         INSERT INTO pitcher_projections (
           run_id, game_pk, mlb_id, last_first, team_code, opp_team_code,
@@ -271,26 +213,35 @@ def insert_pitcher_projection(run_id: int, p: dict) -> None:
           ip, outs, hits, er, bb, k,
           wx_factor, pf_factor, high_variance_flag
         ) VALUES (
-          %(run_id)s, %(game_pk)s, %(mlb_id)s, %(last_first)s, %(team_code)s,
-          %(opp_team_code)s, %(hand)s, %(source)s, %(pa_sample)s,
-          %(era)s, %(xera)s, %(xfip)s, %(true_era)s, %(xwoba_against)s,
-          %(opp_lineup_xwoba)s, %(used_actual_lineup)s, %(used_l15_blend)s,
-          %(ip)s, %(outs)s, %(hits)s, %(er)s, %(bb)s, %(k)s,
-          %(wx_factor)s, %(pf_factor)s, %(high_variance_flag)s
+          %(run_id)s,%(game_pk)s,%(mlb_id)s,%(last_first)s,%(team_code)s,
+          %(opp_team_code)s,%(hand)s,%(source)s,%(pa_sample)s,
+          %(era)s,%(xera)s,%(xfip)s,%(true_era)s,%(xwoba_against)s,
+          %(opp_lineup_xwoba)s,%(used_actual_lineup)s,%(used_l15_blend)s,
+          %(ip)s,%(outs)s,%(hits)s,%(er)s,%(bb)s,%(k)s,
+          %(wx_factor)s,%(pf_factor)s,%(high_variance_flag)s
         )
     """
     execute(sql, {**p, "run_id": run_id})
 
 
 def insert_game_projection(run_id: int, g: dict) -> None:
+    """Extended in v3.1 with F5 and ML columns."""
     sql = """
         INSERT INTO game_projections (
           run_id, game_pk, proj_total, proj_f5, proj_home_runs, proj_away_runs,
-          market_total, edge_total, lean, confidence_tier
+          market_total, edge_total, lean, confidence_tier,
+          market_f5_total, edge_f5, lean_f5,
+          home_win_prob, away_win_prob,
+          away_ml, home_ml, away_ml_implied, home_ml_implied,
+          ml_edge_team, ml_edge_pct
         ) VALUES (
-          %(run_id)s, %(game_pk)s, %(proj_total)s, %(proj_f5)s,
-          %(proj_home_runs)s, %(proj_away_runs)s,
-          %(market_total)s, %(edge_total)s, %(lean)s, %(confidence_tier)s
+          %(run_id)s,%(game_pk)s,%(proj_total)s,%(proj_f5)s,
+          %(proj_home_runs)s,%(proj_away_runs)s,
+          %(market_total)s,%(edge_total)s,%(lean)s,%(confidence_tier)s,
+          %(market_f5_total)s,%(edge_f5)s,%(lean_f5)s,
+          %(home_win_prob)s,%(away_win_prob)s,
+          %(away_ml)s,%(home_ml)s,%(away_ml_implied)s,%(home_ml_implied)s,
+          %(ml_edge_team)s,%(ml_edge_pct)s
         )
     """
     execute(sql, {**g, "run_id": run_id})
@@ -298,61 +249,48 @@ def insert_game_projection(run_id: int, g: dict) -> None:
 
 def insert_edge(run_id: int, e: dict) -> int:
     row = fetchone(
-        """
-        INSERT INTO edges (
-          run_id, game_pk, kind, category, pitcher_mlb_id, pitcher_name,
-          team_code, opp_team_code, line, proj_value, edge, lean,
-          confidence_tier, conviction_pct, flagged, notes
-        ) VALUES (
-          %(run_id)s, %(game_pk)s, %(kind)s, %(category)s, %(pitcher_mlb_id)s,
-          %(pitcher_name)s, %(team_code)s, %(opp_team_code)s, %(line)s,
-          %(proj_value)s, %(edge)s, %(lean)s, %(confidence_tier)s,
-          %(conviction_pct)s, %(flagged)s, %(notes)s
-        )
-        RETURNING edge_id
-        """,
+        """INSERT INTO edges (
+             run_id,game_pk,kind,category,pitcher_mlb_id,pitcher_name,
+             team_code,opp_team_code,line,proj_value,edge,lean,
+             confidence_tier,conviction_pct,flagged,notes
+           ) VALUES (
+             %(run_id)s,%(game_pk)s,%(kind)s,%(category)s,%(pitcher_mlb_id)s,
+             %(pitcher_name)s,%(team_code)s,%(opp_team_code)s,%(line)s,
+             %(proj_value)s,%(edge)s,%(lean)s,%(confidence_tier)s,
+             %(conviction_pct)s,%(flagged)s,%(notes)s
+           ) RETURNING edge_id""",
         {**e, "run_id": run_id},
     )
-    return int(row["edge_id"])  # type: ignore
+    return int(row["edge_id"])
 
 
 def get_latest_run(run_date: str) -> Optional[dict]:
     return fetchone(
-        """
-        SELECT * FROM projection_runs
-        WHERE run_date = %s
-        ORDER BY run_started_at DESC
-        LIMIT 1
-        """,
-        (run_date,),
+        "SELECT * FROM projection_runs WHERE run_date=%s "
+        "ORDER BY run_started_at DESC LIMIT 1", (run_date,)
     )
 
 
 def get_edges_for_run(run_id: int, flagged_only: bool = True) -> list[dict]:
-    sql = "SELECT * FROM edges WHERE run_id = %s"
+    sql = "SELECT * FROM edges WHERE run_id=%s"
     if flagged_only:
-        sql += " AND flagged = TRUE"
+        sql += " AND flagged=TRUE"
     sql += " ORDER BY ABS(edge) DESC"
     return fetchall(sql, (run_id,))
 
 
 def log_job_start(job_name: str) -> int:
     row = fetchone(
-        "INSERT INTO job_runs (job_name, status) VALUES (%s, 'running') RETURNING job_id",
-        (job_name,),
+        "INSERT INTO job_runs (job_name,status) VALUES (%s,'running') RETURNING job_id",
+        (job_name,)
     )
-    return int(row["job_id"])  # type: ignore
+    return int(row["job_id"])
 
 
 def log_job_finish(job_id: int, status: str = "success",
-                    error: Optional[str] = None,
-                    payload: Optional[dict] = None) -> None:
+                    error: Optional[str] = None, payload: Optional[dict] = None) -> None:
     import json as _json
     execute(
-        """
-        UPDATE job_runs SET finished_at = now(), status = %s, error = %s,
-                            payload = %s::jsonb
-        WHERE job_id = %s
-        """,
+        "UPDATE job_runs SET finished_at=now(),status=%s,error=%s,payload=%s::jsonb WHERE job_id=%s",
         (status, error, _json.dumps(payload or {}), job_id),
     )
