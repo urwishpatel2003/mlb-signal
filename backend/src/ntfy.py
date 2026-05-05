@@ -86,7 +86,7 @@ def send_edges_summary(run_id: int, edges: list[dict], metrics: dict) -> bool:
             )
         else:
             lines.append(
-                f"{i}. T{tier}  {e['pitcher_name'].split(',')[0]} {e['category']} {e['lean']:5} {e['line']}  {e['proj_value']:.2f} ({e['edge']:+.2f})"
+                f"{i}. T{tier}  {(e['pitcher_name'] or e['team_code']+'@'+e['opp_team_code']).split(',')[0]} {e['category']} {e['lean']:5} {e['line']}  {e['proj_value']:.2f} ({e['edge']:+.2f})"
             )
     body = "\n".join(lines)
     return _send(title, body, priority="default", tags=["baseball", "chart"])
