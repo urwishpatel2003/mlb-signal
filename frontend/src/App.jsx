@@ -184,6 +184,8 @@ function EdgesView({ edges, kind }) {
   );
 }
 
+function fmtOddsVal(o){ if(o==null)return null; return o>0?'+'+o:String(o); }
+
 function EdgeRow({ edge }) {
   const isProp   = edge.kind==='prop';
   const subject  = isProp ? edge.pitcher_name?.split(',')[0]??'-' : `${edge.team_code??'?'} @ ${edge.opp_team_code??'?'}`;
@@ -192,6 +194,7 @@ function EdgeRow({ edge }) {
   const isLowTrust = tier===3||conv==null;
   let convBarClass = 'conv-bar';
   if (conv!=null){ if(conv>=75)convBarClass+=' conv-strong'; else if(conv>=60)convBarClass+=' conv-medium'; else convBarClass+=' conv-weak'; }
+  const relevantOdds = edge.lean==='OVER' ? fmtOddsVal(edge.over_price) : fmtOddsVal(edge.under_price);
   return (
     <div className="edge-row">
       <div className="cell-subject">
@@ -200,7 +203,10 @@ function EdgeRow({ edge }) {
       </div>
       <div className="cell-market">{MARKET_LABELS[edge.category]||edge.category}</div>
       <div className="cell-num">{Number(edge.line).toFixed(1)}</div>
-      <div className={`cell-pick lean-${edge.lean}`}>{edge.lean}</div>
+      <div className={`cell-pick lean-${edge.lean}`}>
+        {edge.lean}
+        {relevantOdds&&<span className="pick-odds">{relevantOdds}</span>}
+      </div>
       <div className="cell-num cell-proj">{Number(edge.proj_value).toFixed(2)}</div>
       <div className="cell-conviction">
         {isLowTrust
@@ -244,6 +250,7 @@ function F5View({ edges, games }) {
 
 function F5Row({ edge }) {
   const conv=edge.conviction_pct, tier=edge.confidence_tier??3;
+  const relevantOdds = edge.lean==='OVER' ? fmtOddsVal(edge.over_price) : fmtOddsVal(edge.under_price);
   return (
     <div className="edge-row f5-row">
       <div className="cell-subject">
@@ -251,7 +258,10 @@ function F5Row({ edge }) {
         <div className="subject-sub">First 5 Innings</div>
       </div>
       <div className="cell-num">{Number(edge.line).toFixed(1)}</div>
-      <div className={`cell-pick lean-${edge.lean}`}>{edge.lean}</div>
+      <div className={`cell-pick lean-${edge.lean}`}>
+        {edge.lean}
+        {relevantOdds&&<span className="pick-odds">{relevantOdds}</span>}
+      </div>
       <div className="cell-num cell-proj">{Number(edge.proj_value).toFixed(2)}</div>
       <div className="cell-num" style={{fontWeight:700,color:edge.edge>=0?'var(--moss)':'var(--vermillion)'}}>
         {edge.edge>=0?'+':''}{Number(edge.edge).toFixed(2)}
@@ -301,13 +311,18 @@ function MLRow({ edge }) {
   const impliedPct = edge.ml_edge_pct!=null && edge.proj_value!=null
     ? (Number(edge.proj_value) - Number(edge.ml_edge_pct)*100).toFixed(1)+'%' : '-';
   const isPos = (edge.ml_edge_pct??0)>0;
+  // ML odds: line IS the American odds for the lean team
+  const mlOdds = fmtOddsVal(edge.line);
   return (
     <div className="ml-row">
       <div className="cell-subject">
         <div className="subject-main">{edge.team_code} @ {edge.opp_team_code}</div>
         <div className="subject-sub">{edge.notes||''}</div>
       </div>
-      <div className={`cell-pick lean-${isPos?'OVER':'UNDER'}`} style={{fontFamily:'var(--display)',fontWeight:700}}>{edge.lean}</div>
+      <div className={`cell-pick lean-${isPos?'OVER':'UNDER'}`} style={{fontFamily:'var(--display)',fontWeight:700}}>
+        {edge.lean}
+        {mlOdds&&<span className="pick-odds">{mlOdds}</span>}
+      </div>
       <div className="cell-num">{fmtOdds(edge.line)}</div>
       <div className="cell-num cell-proj">{modelPct}</div>
       <div className="cell-num">{impliedPct}</div>

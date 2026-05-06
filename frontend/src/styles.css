@@ -1273,3 +1273,18 @@ html, body {
   }
   .ml-row .cell-num:nth-child(4) { display: none; } /* hide implied on mobile */
 }
+
+/* Pick cell odds display */
+.pick-odds {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  opacity: 0.75;
+  margin-top: 1px;
+}
+
+.cell-pick.lean-OVER .pick-odds  { color: var(--moss); }
+.cell-pick.lean-UNDER .pick-odds { color: var(--vermillion); }
+.ml-row .cell-pick .pick-odds    { color: inherit; }
