@@ -604,6 +604,12 @@ function DayCard({ day }) {
   const totP      = totalBuckets.reduce((s,b)=>s+(b.pushes||0),0);
   const totProfit = totalBuckets.reduce((s,b)=>s+(b.profit_units||0),0);
 
+  const mlBuckets  = buckets.filter(b=>b.kind==='ml');
+  const mlW       = mlBuckets.reduce((s,b)=>s+(b.wins||0),0);
+  const mlL       = mlBuckets.reduce((s,b)=>s+(b.losses||0),0);
+  const mlP       = mlBuckets.reduce((s,b)=>s+(b.pushes||0),0);
+  const mlProfit  = mlBuckets.reduce((s,b)=>s+(b.profit_units||0),0);
+
   const propBuckets = buckets.filter(b=>b.kind==='prop');
   const propCats  = [...new Set(propBuckets.map(b=>b.category))];
   const prpW      = propBuckets.reduce((s,b)=>s+(b.wins||0),0);
@@ -627,6 +633,11 @@ function DayCard({ day }) {
           {totalBuckets.length>0&&(
             <GroupBlock label="Game Totals" wins={totW} losses={totL} pushes={totP} profit={totProfit}>
               {totalBuckets.map((b,i)=><BucketBlock key={i} bucket={b}/>)}
+            </GroupBlock>
+          )}
+          {mlBuckets.length>0&&(
+            <GroupBlock label="Moneyline" wins={mlW} losses={mlL} pushes={mlP} profit={mlProfit}>
+              {mlBuckets.map((b,i)=><BucketBlock key={i} bucket={b}/>)}
             </GroupBlock>
           )}
           {propCats.length>0&&(
