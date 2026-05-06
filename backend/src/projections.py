@@ -405,20 +405,27 @@ def project_pitcher(
         source = "statcast"
         high_variance = true_era > 5.0
 
-        # IP: pitch budget preferred, continuous leash as fallback
-        fallback_ip = _continuous_ip_leash(true_era)
-        avg_pps  = pitcher_xstats.get("avg_pitches_per_start")
-        pit_ppa  = pitcher_xstats.get("pitches_per_pa")
-        lineup_ppa = _lineup_pitches_per_pa(opp_lineup, hitter_xstats)
-        ip = _project_ip_pitch_budget(avg_pps, pit_ppa, lineup_ppa, fallback_ip)
+        # IP: use pitcher's own season average IP/start as base.
+        # This matches how the market prices outs props — books use historical
+        # avg innings per start, not pitch budget models.
+        ip_total_val = float(pitcher_xstats.get("ip_total") or 0)
+        gs_val       = int(pitcher_xstats.get("gs") or 0)
 
-        # Improvement #4: days rest IP adjustment
+        if ip_total_val > 0 and gs_val > 0:
+            # Pitcher's own season average — most reliable signal
+            ip = ip_total_val / gs_val
+        else:
+            # Fallback: continuous leash from true_era
+            ip = _continuous_ip_leash(true_era)
+
+        # Days rest adjustment: ±0.3 IP
         ip += _days_rest_ip_adj(days_rest)
-        ip = max(3.0, min(8.5, ip))
 
-        # Improvement #2 from v3: high-variance IP haircut
+        # High-variance haircut: poor pitcher likely exits early
         if high_variance:
             ip *= 0.88
+
+        ip = max(3.0, min(8.5, ip))
 
     # Weather + park
     cf_az   = float(park.get("cf_azimuth_deg") or 0)
