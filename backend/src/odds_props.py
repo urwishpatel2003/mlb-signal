@@ -219,11 +219,12 @@ def fetch_pitcher_props_for_today() -> dict[str, dict[str, dict]]:
 
 
 def lookup_lines(pitcher_name: str,
-                 odds_lines: dict[str, dict[str, dict]]) -> Optional[dict[str, float]]:
+                 odds_lines: dict[str, dict[str, dict]]) -> Optional[dict[str, dict]]:
     """
     Given a pitcher's "Last, First" name and the cached lookup, return:
-      {"K": 6.5, "Outs": 16.5, "ER": 1.5, "Hits": 5.5}
+      {"K": {"line": 6.5, "over_price": -115, "under_price": -105}, ...}
     or None if pitcher isn't in the data.
+    Returns full dict including prices so orchestrator can store actual juice.
     """
     if not pitcher_name or not odds_lines:
         return None
@@ -231,11 +232,15 @@ def lookup_lines(pitcher_name: str,
     pitcher_props = odds_lines.get(key)
     if not pitcher_props:
         return None
-    out: dict[str, float] = {}
+    out: dict[str, dict] = {}
     for cat, prop in pitcher_props.items():
         line = prop.get("line")
         if line is not None:
-            out[cat] = float(line)
+            out[cat] = {
+                "line":        float(line),
+                "over_price":  prop.get("over_price"),
+                "under_price": prop.get("under_price"),
+            }
     return out or None
 
 
