@@ -367,11 +367,13 @@ def performance_by_date():
         )
 
         # Bucket by (kind, category, lean)
-        bk = (r["kind"], r["category"], r["lean"])
+        # ML edges: lean is team code (e.g. 'WSH') — bucket all ML together
+        bucket_lean = "ML" if r["kind"] == "ml" else r["lean"]
+        bk = (r["kind"], r["category"], bucket_lean)
         b = by_date[d]["buckets"].setdefault(bk, {
             "kind": r["kind"],
             "category": r["category"],
-            "lean": r["lean"],
+            "lean": bucket_lean,
             "wins": 0, "losses": 0, "pushes": 0,
             "profit_units": 0.0,
             "plays": [],
