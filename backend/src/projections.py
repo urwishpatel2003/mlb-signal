@@ -439,7 +439,7 @@ def project_pitcher(
     pf_bb   = float(park.get("pf_bb")   or 100) / 100.0
 
     h9      = h_per_pa * 38 * wx_run * pf_runs
-    er9     = (true_era + woba_delta * 15) * wx_run * pf_runs
+    er9     = (true_era + woba_delta * 7) * wx_run * pf_runs
     k9      = k_pct * 37.5 * pf_so
     bb9_adj = bb9 * pf_bb
 
@@ -595,3 +595,4 @@ def project_hitter_hr_prob(
     hr_prob = expected_fb * float(hr_fb) * pf_hr * wx
 
     return round(min(hr_prob, 0.99), 4)
+
