@@ -392,7 +392,6 @@ def performance_by_date():
             subject = f"{r['team_code'] or '?'} @ {r['opp_team_code'] or '?'}"
         else:
             subject = r["pitcher_name"] or "?"
-        )
         b["plays"].append({
             "subject": subject,
             "team_code": r["team_code"],
