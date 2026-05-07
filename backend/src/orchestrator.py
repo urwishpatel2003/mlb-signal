@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 log = logging.getLogger("orchestrator")
 MODEL_VERSION = "v4.1"
 _DK_LINES: dict = {}
-EDGE_THRESHOLDS = {"Total":0.50,"F5":0.35,"ML":0.04,"K":0.50,"Hits":0.70,"ER":0.50,"Outs":0.70}
+EDGE_THRESHOLDS = {"Total":0.50,"F5":0.35,"ML":0.04,"K":0.50,"Hits":0.70,"ER":1.00,"Outs":0.70}
 
 def american_to_implied(o): return 100/(o+100) if o>0 else -o/(-o+100)
 def remove_vig(a,h): t=a+h; return a/t,h/t
@@ -122,6 +122,10 @@ def compute_edges_for_game(*,game_pk,game,away_proj,home_proj,
             proj_val=proj_vals[category]; diff=proj_val-float(line)
             if abs(diff)<EDGE_THRESHOLDS.get(category,0.5): continue
             lean="OVER" if diff>0 else "UNDER"
+            # ER props: require >55% Poisson probability — single-game ER is high variance
+            if category == "ER":
+                conviction = poisson_tail_prob(proj_val, float(line), lean)
+                if conviction < 0.55: continue
             over_price =prop_data.get("over_price")  if isinstance(prop_data,dict) else None
             under_price=prop_data.get("under_price") if isinstance(prop_data,dict) else None
             edges.append({"game_pk":game_pk,"kind":"prop","category":category,
@@ -282,6 +286,8 @@ def main():
     print(run(trigger=ap.parse_args().trigger))
 
 if __name__=="__main__": main()
+
+
 
 
 
