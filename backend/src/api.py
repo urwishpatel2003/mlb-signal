@@ -341,7 +341,7 @@ def performance_by_date():
         JOIN edges e ON e.edge_id = er.edge_id
         JOIN projection_runs pr ON pr.run_id = e.run_id
         WHERE e.flagged = TRUE
-          AND e.lean IN ('OVER','UNDER')
+          AND (e.lean IN ('OVER','UNDER') OR e.kind = 'ml')
         ORDER BY pr.run_date DESC, e.kind, e.category, e.lean,
                  ABS(e.edge) DESC
     """)
