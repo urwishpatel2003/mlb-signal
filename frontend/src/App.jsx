@@ -664,7 +664,7 @@ function DayCard({ day }) {
           )}
           {mlBuckets.length>0&&(
             <GroupBlock label="Moneyline" wins={mlW} losses={mlL} pushes={mlP} profit={mlProfit}>
-              {mlBuckets.map((b,i)=><BucketBlock key={i} bucket={b}/>)}
+              {mlBuckets.flatMap(b=>b.plays||[]).map((play,i)=><PlayRow key={i} play={play}/>)}
             </GroupBlock>
           )}
           {propCats.length>0&&(
