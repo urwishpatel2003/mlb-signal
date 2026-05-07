@@ -480,10 +480,14 @@ function OverallCard({ summary, byCategory }) {
   const w=summary.wins||0, l=summary.losses||0, p=summary.pushes||0;
   const profit = summary.profit_units||0;
   const totals = byCategory.filter(r=>r.kind==='total');
+  const mls    = byCategory.filter(r=>r.kind==='ml');
   const props  = byCategory.filter(r=>r.kind==='prop');
   const totW=totals.reduce((s,r)=>s+(r.wins||0),0);
   const totL=totals.reduce((s,r)=>s+(r.losses||0),0);
   const totProfit=totals.reduce((s,r)=>s+(r.profit_units||0),0);
+  const mlW=mls.reduce((s,r)=>s+(r.wins||0),0);
+  const mlL=mls.reduce((s,r)=>s+(r.losses||0),0);
+  const mlProfit=mls.reduce((s,r)=>s+(r.profit_units||0),0);
   const prpW=props.reduce((s,r)=>s+(r.wins||0),0);
   const prpL=props.reduce((s,r)=>s+(r.losses||0),0);
   const prpProfit=props.reduce((s,r)=>s+(r.profit_units||0),0);
@@ -502,6 +506,14 @@ function OverallCard({ summary, byCategory }) {
           <div className="tr-split-rate">{fmtRate(totW,totL)}</div>
           <div className={'tr-split-profit '+(totProfit>=0?'pos':'neg')}>{fmtSign(totProfit)}u</div>
         </div>
+        {mls.length>0&&(
+        <div className="tr-split-tile">
+          <div className="tr-split-label">Moneyline</div>
+          <div className="tr-split-record">{mlW}-{mlL}</div>
+          <div className="tr-split-rate">{fmtRate(mlW,mlL)}</div>
+          <div className={'tr-split-profit '+(mlProfit>=0?'pos':'neg')}>{fmtSign(mlProfit)}u</div>
+        </div>
+        )}
         <div className="tr-split-tile">
           <div className="tr-split-label">Pitcher Props</div>
           <div className="tr-split-record">{prpW}-{prpL}</div>
