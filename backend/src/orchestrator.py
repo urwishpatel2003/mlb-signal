@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 log = logging.getLogger("orchestrator")
 MODEL_VERSION = "v4.1"
 _DK_LINES: dict = {}
-EDGE_THRESHOLDS = {"Total":0.50,"F5":0.35,"ML":0.04,"K":0.50,"Hits":0.70,"ER":1.00,"Outs":0.70}
+EDGE_THRESHOLDS = {"Total":0.50,"F5":0.35,"ML":0.10,"K":0.50,"Hits":0.70,"ER":1.00,"Outs":0.70}
 
 def american_to_implied(o): return 100/(o+100) if o>0 else -o/(-o+100)
 def remove_vig(a,h): t=a+h; return a/t,h/t
@@ -286,6 +286,7 @@ def main():
     print(run(trigger=ap.parse_args().trigger))
 
 if __name__=="__main__": main()
+
 
 
 
