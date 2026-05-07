@@ -384,11 +384,14 @@ def performance_by_date():
         b["profit_units"] = round(b["profit_units"] + profit, 2)
 
         # Compose play row. For totals use matchup, for props use pitcher name.
-        is_total = r["kind"] == "total"
-        subject = (
-            f"{r['team_code'] or '?'} @ {r['opp_team_code'] or '?'}"
-            if is_total
-            else (r["pitcher_name"] or "?")
+        is_total = r["kind"] in ("total", "ml", "f5")
+        lean_label = f" → {r['lean']}" if r["kind"] == "ml" else ""
+        if r["kind"] == "ml":
+            subject = f"{r['team_code'] or '?'} @ {r['opp_team_code'] or '?'}{lean_label}"
+        elif is_total:
+            subject = f"{r['team_code'] or '?'} @ {r['opp_team_code'] or '?'}"
+        else:
+            subject = r["pitcher_name"] or "?"
         )
         b["plays"].append({
             "subject": subject,
