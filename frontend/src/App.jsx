@@ -549,6 +549,22 @@ function PlayRow({ play }) {
   );
 }
 
+function MLPlayRow({ play }) {
+  const res = (play.result || '').toLowerCase();
+  const odds = play.line != null ? (play.line > 0 ? '+'+Math.round(play.line) : Math.round(play.line)) : '-';
+  // Subject format: "MIN @ WSH" — lean team is in play.subject after the arrow or we use team_code
+  const matchup = play.subject || '-';
+  return (
+    <div className={'play-row result-'+res}>
+      <span className="play-subject">{matchup}</span>
+      <span className="play-line">{odds}</span>
+      <span className="play-actual">{play.actual_value===1.0?'WIN':'LOSS'}</span>
+      <span className={'play-result res-'+res}>{play.result}</span>
+      <span className={(play.profit_units||0)>=0?'play-profit pos':'play-profit neg'}>{fmtSign(play.profit_units||0)}u</span>
+    </div>
+  );
+}
+
 function BucketBlock({ bucket }) {
   const [open,setOpen] = useState(false);
   const p = bucket.profit_units||0;
@@ -664,7 +680,7 @@ function DayCard({ day }) {
           )}
           {mlBuckets.length>0&&(
             <GroupBlock label="Moneyline" wins={mlW} losses={mlL} pushes={mlP} profit={mlProfit}>
-              {mlBuckets.flatMap(b=>b.plays||[]).map((play,i)=><PlayRow key={i} play={play}/>)}
+              {mlBuckets.flatMap(b=>b.plays||[]).map((play,i)=><MLPlayRow key={i} play={play}/>)}
             </GroupBlock>
           )}
           {propCats.length>0&&(
