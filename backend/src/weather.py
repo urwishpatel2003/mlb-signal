@@ -149,13 +149,33 @@ def enrich_weather_for_game(game) -> dict:
     Returns weather dict, or {} for domes / failure.
     """
     venue = getattr(game, "venue", None)
-    if not venue:
+    roof_type = (venue.roof_type or "") if venue else ""
+    if roof_type.lower() in ("dome", "closed"):
         return {}
-    if (venue.roof_type or "").lower() in ("dome", "closed"):
-        return {}
+    lat = venue.lat if venue else None
+    lon = venue.lon if venue else None
 
-    lat = venue.lat
-    lon = venue.lon
+    # Fall back to parks table if venue has no coordinates
+    if not lat or not lon:
+        try:
+            from . import db
+            from .park_factors import get_park_for_team
+            home_team = getattr(game, "home_team", None)
+            if home_team:
+                import datetime as _dt
+                park_code = get_park_for_team(home_team)
+                park_row = db.fetchone(
+                    "SELECT lat, lon, roof_type FROM parks WHERE park_code=%s AND season_year=%s",
+                    (park_code, _dt.date.today().year)
+                )
+                if park_row:
+                    lat = park_row.get("lat")
+                    lon = park_row.get("lon")
+                    if (park_row.get("roof_type") or "").lower() in ("dome", "closed"):
+                        return {}
+        except Exception as e:
+            log.debug("Parks table fallback failed: %s", e)
+
     if not lat or not lon:
         return {}
 
