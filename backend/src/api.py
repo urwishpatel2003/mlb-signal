@@ -220,6 +220,14 @@ def get_run_projections(run_id: int):
 
 
 # ---------- Performance ----------
+@app.get("/api/admin/test-pybaseball/{token}")
+def test_pybaseball(token: str):
+    if token != os.environ.get("ADMIN_TOKEN"): raise HTTPException(403)
+    from pybaseball import pitching_stats
+    df = pitching_stats(2026, qual=0)
+    return {"columns": df.columns.tolist(), "sample": df.head(3).to_dict(orient="records")}
+
+
 
 @app.get("/api/performance/rolling")
 def performance_rolling():
@@ -568,6 +576,7 @@ def scheduler_status(token: str):
         return {"ok": True, "jobs": jobs}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
 
 
 
