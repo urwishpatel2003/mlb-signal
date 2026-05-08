@@ -427,7 +427,7 @@ def project_pitcher(
         gs_prev        = int(pitcher_xstats.get("gs_prev") or 0)
 
         season_avg_ip = ip_total_val / gs_val if (ip_total_val > 0 and gs_val > 0) else None
-        prior_avg_ip  = float(ip_total_prev) / gs_prev if (ip_total_prev and gs_prev >= 5) else None
+        prior_avg_ip  = float(ip_total_prev) / gs_prev if (ip_total_prev and gs_prev >= 10) else None
         l5_ip         = float(l5_avg_ip) if l5_avg_ip is not None else None
 
         if season_avg_ip and prior_avg_ip and l5_ip:
@@ -639,4 +639,5 @@ def project_hitter_hr_prob(
     hr_prob = expected_fb * float(hr_fb) * pf_hr * wx
 
     return round(min(hr_prob, 0.99), 4)
+
 
