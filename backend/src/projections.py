@@ -381,18 +381,29 @@ def project_pitcher(
                     + 0.3 * float(pitcher_xstats.get("ba") or LEAGUE_XBA)
                     + woba_delta * 0.25)
 
-        # K%: real data preferred
-        raw_k_pct = pitcher_xstats.get("k_pct")
-        if raw_k_pct is not None:
+        # K%: use whiff rate when available — better predictor than raw k_pct
+        # Whiff rate is more stable (reflects pure stuff) vs k_pct (fluctuates with sequencing)
+        raw_k_pct  = pitcher_xstats.get("k_pct")
+        whiff_pct  = pitcher_xstats.get("whiff_pct")
+
+        if whiff_pct is not None and raw_k_pct is not None:
+            # Blend: whiff-based K estimate + actual k_pct
+            # whiff → K conversion: roughly whiff_pct * 0.85 ≈ k_pct
+            whiff_k_est = float(whiff_pct) * 0.85
+            k_pct = 0.50 * float(raw_k_pct) + 0.50 * whiff_k_est
+        elif whiff_pct is not None:
+            k_pct = float(whiff_pct) * 0.85
+        elif raw_k_pct is not None:
             k_scaler = (LEAGUE_XWOBA - xwoba_against) * 0.40
             k_pct = 0.80 * float(raw_k_pct) + 0.20 * (LEAGUE_K_PCT + k_scaler)
         else:
             k_pct = LEAGUE_K_PCT + (LEAGUE_XWOBA - xwoba_against) * 0.40
 
+        # Adjust for opponent lineup K tendency
         lineup_k = opp_lineup_k_pct(opp_lineup, hitter_xstats)
         if lineup_k is not None:
             k_pct *= max(0.85, min(1.15, lineup_k / LEAGUE_K_PCT))
-        k_pct = max(0.14, min(0.35, k_pct))
+        k_pct = max(0.14, min(0.38, k_pct))
 
         # BB9: real data with Bayesian shrinkage
         raw_bb9 = pitcher_xstats.get("bb9")
@@ -405,17 +416,32 @@ def project_pitcher(
         source = "statcast"
         high_variance = true_era > 5.0
 
-        # IP: use pitcher's own season average IP/start as base.
-        # This matches how the market prices outs props — books use historical
-        # avg innings per start, not pitch budget models.
-        ip_total_val = float(pitcher_xstats.get("ip_total") or 0)
-        gs_val       = int(pitcher_xstats.get("gs") or 0)
+        # IP: three-way blend — prior year baseline + season YTD + recent L5
+        # Prior year tells us if pitcher is a long horse or short starter
+        # Season avg captures current year workload
+        # L5 captures recent trend (pitchers stretch out as season progresses)
+        ip_total_val   = float(pitcher_xstats.get("ip_total") or 0)
+        gs_val         = int(pitcher_xstats.get("gs") or 0)
+        l5_avg_ip      = pitcher_xstats.get("l5_avg_ip")
+        ip_total_prev  = pitcher_xstats.get("ip_total_prev")
+        gs_prev        = int(pitcher_xstats.get("gs_prev") or 0)
 
-        if ip_total_val > 0 and gs_val > 0:
-            # Pitcher's own season average — most reliable signal
-            ip = ip_total_val / gs_val
+        season_avg_ip = ip_total_val / gs_val if (ip_total_val > 0 and gs_val > 0) else None
+        prior_avg_ip  = float(ip_total_prev) / gs_prev if (ip_total_prev and gs_prev >= 5) else None
+        l5_ip         = float(l5_avg_ip) if l5_avg_ip is not None else None
+
+        if season_avg_ip and prior_avg_ip and l5_ip:
+            # Full three-way blend: prior 30% / season 30% / L5 40%
+            ip = 0.30 * prior_avg_ip + 0.30 * season_avg_ip + 0.40 * l5_ip
+        elif season_avg_ip and l5_ip:
+            # No prior year — blend season and L5
+            ip = 0.45 * season_avg_ip + 0.55 * l5_ip
+        elif season_avg_ip and prior_avg_ip:
+            # No L5 — blend season and prior year
+            ip = 0.50 * prior_avg_ip + 0.50 * season_avg_ip
+        elif season_avg_ip:
+            ip = season_avg_ip
         else:
-            # Fallback: continuous leash from true_era
             ip = _continuous_ip_leash(true_era)
 
         # Days rest adjustment: ±0.3 IP
@@ -438,9 +464,27 @@ def project_pitcher(
     pf_so   = float(park.get("pf_so")   or 100) / 100.0
     pf_bb   = float(park.get("pf_bb")   or 100) / 100.0
 
-    h9      = h_per_pa * 38 * wx_run * pf_runs
+    # Pitcher type classification based on whiff rate
+    # Power pitcher: high whiff → faces more batters per inning (deep counts)
+    # Contact pitcher: low whiff → early contact, fewer BF per inning
+    whiff_pct_val = float((pitcher_xstats or {}).get("whiff_pct") or 0.22)
+    contact_pct_val = float((pitcher_xstats or {}).get("contact_pct") or 0.78)
+
+    # BF per 9 innings: contact pitchers face fewer (early outs), power face more
+    # League avg: ~38 BF/9. Contact (<20% whiff): ~35. Power (>28% whiff): ~40
+    if whiff_pct_val >= 0.28:
+        bf_per_9 = 40.0   # power pitcher — more pitches per out
+    elif whiff_pct_val <= 0.20:
+        bf_per_9 = 35.0   # contact pitcher — early contact, efficient
+    else:
+        bf_per_9 = 35.0 + (whiff_pct_val - 0.20) / 0.08 * 5.0  # linear interpolation
+
+    # Hits: contact pitchers allow more hits per BF
+    # High contact_pct → more balls in play → more hits
+    contact_hits_adj = 1.0 + (contact_pct_val - 0.78) * 0.5  # ±adjustment around league avg
+    h9      = h_per_pa * bf_per_9 * wx_run * pf_runs * contact_hits_adj
     er9     = (true_era + woba_delta * 7) * wx_run * pf_runs
-    k9      = k_pct * 37.5 * pf_so
+    k9      = k_pct * bf_per_9 * pf_so
     bb9_adj = bb9 * pf_bb
 
     leash_adj = 1.0 - (wx_run - 1.0) * 0.3

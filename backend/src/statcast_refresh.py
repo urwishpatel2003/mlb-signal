@@ -238,6 +238,29 @@ def _refresh_pitcher_budget(season_year: int) -> int:
             if last_start_date:
                 days_rest = (today - last_start_date).days
 
+        # L5 avg IP — last 5 starts
+        if starts:
+            sorted_starts = sorted(starts, key=lambda s: s.get("date",""), reverse=True)
+            recent_5 = sorted_starts[:5]
+            recent_ips = [(_parse_ip((s.get("stat") or {}).get("inningsPitched")) or 0) for s in recent_5]
+            l5_avg_ip = round(sum(recent_ips) / len(recent_ips), 2) if recent_ips else None
+        else:
+            l5_avg_ip = None
+
+        # Prior year IP — fetch season stats for previous year
+        prev_year = season_year - 1
+        ip_total_prev = gs_prev = None
+        try:
+            prev_stats = _fetch_pitcher_season_stats(mlb_id, prev_year)
+            if prev_stats:
+                prev_ip  = _parse_ip(prev_stats.get("inningsPitched"))
+                prev_gs  = _coerce_int(prev_stats.get("gamesStarted"))
+                if prev_ip and prev_gs and prev_gs >= 5:
+                    ip_total_prev = round(float(prev_ip), 2)
+                    gs_prev       = prev_gs
+        except Exception:
+            pass
+
         update_rows.append({
             "mlb_id": mlb_id, "season_year": season_year,
             "g_total": g_total, "gs": gs, "ip_total": ip_sum, "tbf": tbf_sum,
@@ -250,6 +273,9 @@ def _refresh_pitcher_budget(season_year: int) -> int:
             "hr_fb_rate": hr_fb_rate,
             "last_start_date": last_start_date.isoformat() if last_start_date else None,
             "days_rest": days_rest,
+            "l5_avg_ip": l5_avg_ip,
+            "ip_total_prev": ip_total_prev,
+            "gs_prev": gs_prev,
         })
         success += 1
         if (i+1) % 50 == 0:
@@ -268,6 +294,9 @@ def _refresh_pitcher_budget(season_year: int) -> int:
           hr_fb_rate=%(hr_fb_rate)s,
           last_start_date=%(last_start_date)s,
           days_rest=%(days_rest)s,
+          l5_avg_ip=%(l5_avg_ip)s,
+          ip_total_prev=%(ip_total_prev)s,
+          gs_prev=%(gs_prev)s,
           refreshed_at=now()
         WHERE mlb_id=%(mlb_id)s AND season_year=%(season_year)s;
     """
@@ -506,6 +535,105 @@ def _refresh_team_offensive_xwoba(season_year: int) -> int:
     return n
 
 
+
+# =============================================================================
+# Whiff rate + contact rate from Baseball Savant pitch arsenal
+# =============================================================================
+
+SAVANT_ARSENAL_URL = (
+    "https://baseballsavant.mlb.com/leaderboard/pitch-arsenal-stats"
+    "?type=pitcher&pitchType=&year={year}&team=&min=1&csv=true"
+)
+SAVANT_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/csv,text/plain,*/*",
+    "Referer": "https://baseballsavant.mlb.com/",
+}
+
+
+def _refresh_pitcher_whiff(season_year: int) -> int:
+    """
+    Fetch pitch arsenal data from Baseball Savant and compute per-pitcher:
+      - whiff_pct: weighted avg whiff rate across all pitch types (weight = pitch count)
+      - swstr_pct: proxy via whiff weighted by usage (no direct overall swstr in this endpoint)
+      - contact_pct: 1 - whiff_pct
+
+    One row per pitcher per pitch type — aggregate by pitcher_id weighted by pitches.
+    Uses MLB player_id directly — no ID crosswalk needed.
+    """
+    import csv, io
+    url = SAVANT_ARSENAL_URL.format(year=season_year)
+    try:
+        r = requests.get(url, headers=SAVANT_HEADERS, timeout=20)
+        r.raise_for_status()
+        text = r.text
+    except Exception as e:
+        log.warning("Savant pitch arsenal fetch failed: %s", e)
+        return 0
+
+    # Parse CSV
+    reader = csv.DictReader(io.StringIO(text.lstrip("﻿")))
+    # Aggregate: {player_id: {total_pitches, weighted_whiff_sum}}
+    pitcher_data: dict[int, dict] = {}
+    for row in reader:
+        try:
+            pid     = int(row.get("player_id") or 0)
+            pitches = int(row.get("pitches") or 0)
+            whiff   = float(row.get("whiff_percent") or 0)
+            if pid == 0 or pitches == 0:
+                continue
+            if pid not in pitcher_data:
+                pitcher_data[pid] = {"total_pitches": 0, "whiff_sum": 0.0}
+            pitcher_data[pid]["total_pitches"] += pitches
+            pitcher_data[pid]["whiff_sum"]     += pitches * whiff
+        except (ValueError, TypeError):
+            continue
+
+    if not pitcher_data:
+        log.warning("No pitch arsenal data parsed")
+        return 0
+
+    # Build update rows — only for pitchers already in our DB
+    existing = {r["mlb_id"] for r in db.fetchall(
+        "SELECT mlb_id FROM pitcher_xstats WHERE season_year=%s", (season_year,))}
+
+    update_rows = []
+    for pid, data in pitcher_data.items():
+        if pid not in existing:
+            continue
+        total = data["total_pitches"]
+        if total == 0:
+            continue
+        whiff_pct   = round(data["whiff_sum"] / total / 100, 4)  # convert % to rate
+        contact_pct = round(1.0 - whiff_pct, 4)
+        update_rows.append({
+            "mlb_id":      pid,
+            "season_year": season_year,
+            "whiff_pct":   whiff_pct,
+            "contact_pct": contact_pct,
+            "swstr_pct":   whiff_pct,  # use whiff as proxy for swstr
+        })
+
+    if not update_rows:
+        log.warning("No whiff rows matched existing pitchers")
+        return 0
+
+    sql = """
+        UPDATE pitcher_xstats SET
+          whiff_pct=%(whiff_pct)s,
+          contact_pct=%(contact_pct)s,
+          swstr_pct=%(swstr_pct)s,
+          refreshed_at=now()
+        WHERE mlb_id=%(mlb_id)s AND season_year=%(season_year)s;
+    """
+    n = db.execute_many(sql, update_rows)
+    log.info("Updated whiff/contact rate for %d pitchers", n)
+    return n
+
+
 # =============================================================================
 # Top-level refresh
 # =============================================================================
@@ -534,6 +662,7 @@ def refresh_statcast(season_year: Optional[int] = None) -> dict:
 
         for name, fn, key in [
             ("pitcher budget+ratios+rest", _refresh_pitcher_budget,      "n_pitcher_budget"),
+            ("pitcher whiff+contact rate", _refresh_pitcher_whiff,       "n_pitcher_whiff"),
             ("hitter budget+L15",          _refresh_hitter_budget,        "n_hitter_budget"),
             ("hitter splits",              _refresh_hitter_splits,        "n_hitter_splits"),
             ("team bullpen (season+L7)",   _refresh_team_bullpen_stats,   "n_team_bullpen"),
