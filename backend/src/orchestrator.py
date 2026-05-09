@@ -2,7 +2,7 @@
 from __future__ import annotations
 import argparse, logging, math, traceback
 from dataclasses import asdict
-from datetime import date
+from datetime import date, datetime, timezone, timedelta
 from typing import Optional
 
 from . import db, mlb_api, projections, ntfy, odds_props
@@ -174,7 +174,8 @@ def run(trigger="manual"):
     job_id=db.log_job_start(f"orchestrator:{trigger}")
     metrics={"trigger":trigger,"errors":[]}
     try:
-        run_date=date.today().isoformat()
+        et_now = datetime.now(timezone.utc) - timedelta(hours=4)
+        run_date = et_now.date().isoformat()
         games=mlb_api.get_schedule()
         active=[g for g in games if g.status in ("Scheduled","Pre-Game","Warmup","Delayed Start")]
         metrics["n_games"]=len(active); log.info("%d active games",len(active))
@@ -185,7 +186,7 @@ def run(trigger="manual"):
         try: _DK_LINES=odds_props.fetch_pitcher_props_for_today()
         except Exception as e: log.warning("DK props failed: %s",e); _DK_LINES={}
         run_id=db.create_projection_run(run_date,MODEL_VERSION,trigger,len(active))
-        metrics["run_id"]=run_id; season=date.today().year
+        metrics["run_id"]=run_id; season=et_now.year
         all_pit={r["mlb_id"]:r for r in db.fetchall("SELECT * FROM pitcher_xstats WHERE season_year=%s",(season,))}
         all_hit={r["mlb_id"]:r for r in db.fetchall("SELECT * FROM hitter_xstats WHERE season_year=%s",(season,))}
         for sr in db.fetchall("SELECT mlb_id,vs_hand,pa,est_woba FROM hitter_splits WHERE season_year=%s",(season,)):
@@ -289,6 +290,7 @@ def main():
     print(run(trigger=ap.parse_args().trigger))
 
 if __name__=="__main__": main()
+
 
 
 
