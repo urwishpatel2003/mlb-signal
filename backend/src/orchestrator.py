@@ -95,9 +95,11 @@ def compute_edges_for_game(*,game_pk,game,away_proj,home_proj,
     if away_ml and home_ml and projections.ml_edge_reliable(away_proj,home_proj):
         ai,hi=remove_vig(american_to_implied(away_ml),american_to_implied(home_ml))
         hep=home_win_prob-hi; aep=away_win_prob-ai
-        if abs(hep)>=EDGE_THRESHOLDS["ML"] and hep>=aep:
+        # Higher threshold for big underdogs (+150 or longer) — noisy projections
+        def ml_threshold(odds): return 0.50 if odds is not None and odds >= 150 else EDGE_THRESHOLDS["ML"]
+        if abs(hep)>=ml_threshold(home_ml) and hep>=aep:
             ml_lean,ml_odds,wp,ep,oi=game.get("home_team"),home_ml,home_win_prob,hep,hi
-        elif abs(aep)>=EDGE_THRESHOLDS["ML"]:
+        elif abs(aep)>=ml_threshold(away_ml):
             ml_lean,ml_odds,wp,ep,oi=game.get("away_team"),away_ml,away_win_prob,aep,ai
         else: ml_lean=None
         if ml_lean:
@@ -290,6 +292,7 @@ def main():
     print(run(trigger=ap.parse_args().trigger))
 
 if __name__=="__main__": main()
+
 
 
 
