@@ -492,9 +492,6 @@ def project_pitcher(
     # K: k_pct * avg_bf_per_start (actual BF per start, not theoretical)
     k_proj  = k_pct * avg_bf_per_start * pf_so
     bb9_adj = bb9 * pf_bb
-    # Per-9 equivalents for storage
-    h9 = (hits_proj / max(ip_adj, 0.1)) * 9
-    k9 = (k_proj  / max(ip_adj, 0.1)) * 9
 
     leash_adj = 1.0 - (wx_run - 1.0) * 0.3
     ip_adj    = ip * leash_adj
