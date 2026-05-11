@@ -481,11 +481,16 @@ def project_pitcher(
 
     # Hits: contact pitchers allow more hits per BF
     # High contact_pct → more balls in play → more hits
-    contact_hits_adj = 1.0 + (contact_pct_val - 0.78) * 0.5  # ±adjustment around league avg
-    h9      = h_per_pa * bf_per_9 * wx_run * pf_runs * contact_hits_adj
+    # Hits: est_ba * avg_bf_per_start — market aligned
+    hits_lineup_adj = 1.0 + woba_delta * 1.5
+    hits_proj = h_est_ba * avg_bf_per_start * wx_run * pf_runs * hits_lineup_adj
     er9     = (true_era + woba_delta * 7) * wx_run * pf_runs
-    k9      = k_pct * bf_per_9 * pf_so
+    # K: k_pct * avg_bf_per_start (actual BF per start, not theoretical)
+    k_proj  = k_pct * avg_bf_per_start * pf_so
     bb9_adj = bb9 * pf_bb
+    # Per-9 equivalents for storage
+    h9 = (hits_proj / max(ip_adj, 0.1)) * 9
+    k9 = (k_proj  / max(ip_adj, 0.1)) * 9
 
     leash_adj = 1.0 - (wx_run - 1.0) * 0.3
     ip_adj    = ip * leash_adj
@@ -502,8 +507,8 @@ def project_pitcher(
         opp_lineup_xwoba=round(opp_xwoba,4),
         used_actual_lineup=used_actual, used_l15_blend=used_l15,
         ip=round(ip_adj,2), outs=round(ip_adj*3,1),
-        hits=round((h9/9)*ip_adj,2), er=round((er9/9)*ip_adj,2),
-        bb=round((bb9_adj/9)*ip_adj,2), k=round((k9/9)*ip_adj,2),
+        hits=round(hits_proj,2), er=round((er9/9)*ip_adj,2),
+        bb=round((bb9_adj/9)*ip_adj,2), k=round(k_proj,2),
         wx_factor=round(wx_run,3), pf_factor=round(pf_runs,3),
         high_variance_flag=high_variance,
         days_rest=int(days_rest) if days_rest is not None else None,
