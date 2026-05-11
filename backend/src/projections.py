@@ -351,10 +351,14 @@ def project_pitcher(
         true_era = LEAGUE_ER9
         xera = era = xfip = xwoba_against = None
         h_per_pa = LEAGUE_XBA; k_pct = LEAGUE_K_PCT; bb9 = LEAGUE_BB9
+        h_est_ba = LEAGUE_XBA  # fallback
+        avg_bf_per_start = 20.0  # fallback: league avg BF per start
         source = "league_avg" if pitcher_xstats is None else "low_sample"
         ip = 5.0; high_variance = False
     else:
         xera = float(pitcher_xstats["xera"])
+        h_est_ba = float(pitcher_xstats.get("est_ba") or LEAGUE_XBA)
+        avg_bf_per_start = float(pitcher_xstats.get("tbf") or 0) / max(int(pitcher_xstats.get("gs") or 1), 1)
         era  = float(pitcher_xstats.get("era") or LEAGUE_ER9)
 
         # Improvement #6: compute xFIP from components if available
