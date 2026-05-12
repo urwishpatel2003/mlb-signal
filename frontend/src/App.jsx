@@ -565,7 +565,7 @@ function MLPlayRow({ play }) {
   );
 }
 
-function BucketBlock({ bucket }) {
+function BucketBlock({ bucket, showUnits=true }) {
   const [open,setOpen] = useState(false);
   const p = bucket.profit_units||0;
   const pushStr = bucket.pushes>0?'-'+bucket.pushes:'';
@@ -575,13 +575,16 @@ function BucketBlock({ bucket }) {
         <span className="bucket-block-name">{bucket.lean}</span>
         <div className="bucket-block-stats">
           <span>{bucket.wins}-{bucket.losses}{pushStr}</span>
-          <span className={p>=0?'pos':'neg'}>{fmtSign(p)}u</span>
+          {showUnits
+            ? <span className={p>=0?'pos':'neg'}>{fmtSign(p)}u</span>
+            : <span style={{color:'var(--ink-3)',fontSize:'10px'}}>—</span>
+          }
           <span className="bucket-toggle">{open?'▲':'▼'}</span>
         </div>
       </div>
       {open&&(
         <div className="bucket-plays">
-          {(bucket.plays||[]).map((play,i)=><PlayRow key={i} play={play}/>)}
+          {(bucket.plays||[]).map((play,i)=><PlayRow key={i} play={play} showUnits={showUnits}/>)}
         </div>
       )}
     </div>
@@ -614,7 +617,7 @@ function PropCatBlock({ cat, buckets }) {
   );
 }
 
-function GroupBlock({ label, children, wins, losses, pushes, profit }) {
+function GroupBlock({ label, children, wins, losses, pushes, profit, showUnits=true }) {
   const [open,setOpen] = useState(false);
   const p = profit||0;
   const pushStr = pushes>0?'-'+pushes:'';
@@ -624,7 +627,10 @@ function GroupBlock({ label, children, wins, losses, pushes, profit }) {
         <span className="day-group-name">{label}</span>
         <div className="day-group-stats">
           <span>{wins}-{losses}{pushStr}</span>
-          <span className={p>=0?'pos':'neg'}>{fmtSign(p)}u</span>
+          {showUnits
+            ? <span className={p>=0?'pos':'neg'}>{fmtSign(p)}u</span>
+            : <span style={{color:'var(--ink-3)',fontSize:'10px'}}>—</span>
+          }
           <span className="bucket-toggle">{open?'▲':'▼'}</span>
         </div>
       </div>
@@ -684,7 +690,7 @@ function DayCard({ day }) {
             </GroupBlock>
           )}
           {propCats.length>0&&(
-            <GroupBlock label="Pitcher Props" wins={prpW} losses={prpL} pushes={prpP} profit={prpProfit}>
+            <GroupBlock label="Pitcher Props" wins={prpW} losses={prpL} pushes={prpP} profit={null} showUnits={false}>
               {propCats.map(cat=>(
                 <PropCatBlock key={cat} cat={cat} buckets={propBuckets.filter(b=>b.category===cat)}/>
               ))}
