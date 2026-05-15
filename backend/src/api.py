@@ -437,6 +437,7 @@ def performance_overall():
         SELECT
           e.kind,
           e.category,
+          e.lean,
           COUNT(*) FILTER (WHERE er.result = 'WIN')   AS wins,
           COUNT(*) FILTER (WHERE er.result = 'LOSS')  AS losses,
           COUNT(*) FILTER (WHERE er.result = 'PUSH')  AS pushes,
