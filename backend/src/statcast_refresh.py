@@ -138,7 +138,6 @@ def _fetch_hitter_season_stats(mlb_id, season_year):
 
 
 def _fetch_hitter_last_x_games(mlb_id, season_year, n_games=15):
-l5_stats  = _fetch_hitter_last_x_games(mlb_id, season_year, n_games=5)
     url = f"{MLB_API_BASE}/people/{mlb_id}/stats"
     params = {"stats":"lastXGames","group":"hitting","season":season_year,"gameType":"R","limit":n_games}
     try:
@@ -327,6 +326,7 @@ def _refresh_hitter_budget(season_year: int) -> int:
         mlb_id = row["mlb_id"]
         stats = _fetch_hitter_season_stats(mlb_id, season_year)
         l15_stats = _fetch_hitter_last_x_games(mlb_id, season_year, n_games=15)
+        l5_stats  = _fetch_hitter_last_x_games(mlb_id, season_year, n_games=5)
         if not stats and not l15_stats: continue
         pa = _coerce_int((stats or {}).get("plateAppearances")) or 0
         pitches = _coerce_int((stats or {}).get("numberOfPitches")) or 0
