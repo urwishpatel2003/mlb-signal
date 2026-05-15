@@ -178,7 +178,7 @@ def run(trigger="manual"):
     try:
         et_now = datetime.now(timezone.utc) - timedelta(hours=4)
         run_date = et_now.date().isoformat()
-        games=mlb_api.get_schedule()
+        games=mlb_api.get_schedule(target_date=et_now.date())
         active=[g for g in games if g.status in ("Scheduled","Pre-Game","Warmup","Delayed Start")]
         metrics["n_games"]=len(active); log.info("%d active games",len(active))
         for g in active: persist_game(g)
@@ -304,6 +304,7 @@ def main():
     print(run(trigger=ap.parse_args().trigger))
 
 if __name__=="__main__": main()
+
 
 
 
