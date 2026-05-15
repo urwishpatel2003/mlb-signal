@@ -482,13 +482,11 @@ def _refresh_team_bullpen_stats(season_year: int) -> int:
 
 def _refresh_team_offensive_xwoba(season_year: int) -> int:
     """
-    Compute each team's OWN hitting xwOBA from hitter_xstats rows.
-    Groups by team from the DB (hitter_xstats doesn't store team directly —
-    we pull it from the MLB Stats API team stats endpoint instead).
-
-    Upserts into team_xstats.team_xwoba.
+    Compute each team's OWN hitting wOBA — season average AND last 5 games.
+    Blended in projections: 0.60 * season + 0.40 * L5.
+    L5 captures recent form — cold/injured teams get correctly downgraded.
     """
-    log.info("Fetching team offensive xwOBA for all 30 teams")
+    log.info("Fetching team offensive wOBA (season + L5) for all 30 teams")
     teams_url = f"{MLB_API_BASE}/teams?sportId=1&season={season_year}"
     try:
         r = requests.get(teams_url, timeout=REQUEST_TIMEOUT)
@@ -503,35 +501,52 @@ def _refresh_team_offensive_xwoba(season_year: int) -> int:
         team_code = team.get("abbreviation")
         if not team_id or not team_code: continue
 
-        # Use MLB Stats API team hitting stats for season xwOBA proxy
-        # MLB API doesn't expose xwOBA directly — use wOBA as proxy
-        url = f"{MLB_API_BASE}/teams/{team_id}/stats"
-        params = {"stats":"season","group":"hitting","season":season_year}
+        # Season wOBA
+        season_woba = None
         try:
-            r = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
+            url = f"{MLB_API_BASE}/teams/{team_id}/stats"
+            r = requests.get(url, params={"stats":"season","group":"hitting","season":season_year}, timeout=REQUEST_TIMEOUT)
             r.raise_for_status()
             splits = r.json().get("stats",[{}])[0].get("splits",[])
-            if not splits: continue
-            stat = splits[0].get("stat",{})
-            woba = _compute_woba_from_stats(stat)
-            if woba:
-                update_rows.append({
-                    "team_code": team_code,
-                    "season_year": season_year,
-                    "team_xwoba": woba,
-                })
+            if splits:
+                season_woba = _compute_woba_from_stats(splits[0].get("stat",{}))
         except Exception as e:
-            log.debug("Team %s offensive stats failed: %s", team_code, e)
+            log.debug("Team %s season stats failed: %s", team_code, e)
+
+        # L5 wOBA — last 5 games form
+        l5_woba = None
+        try:
+            url = f"{MLB_API_BASE}/teams/{team_id}/stats"
+            r = requests.get(url, params={"stats":"lastXGames","group":"hitting","season":season_year,"gameType":"R","limit":5}, timeout=REQUEST_TIMEOUT)
+            r.raise_for_status()
+            splits = r.json().get("stats",[{}])[0].get("splits",[])
+            if splits:
+                l5_woba = _compute_woba_from_stats(splits[0].get("stat",{}))
+        except Exception as e:
+            log.debug("Team %s L5 stats failed: %s", team_code, e)
+
+        if season_woba:
+            update_rows.append({
+                "team_code":    team_code,
+                "season_year":  season_year,
+                "team_xwoba":   season_woba,
+                "team_woba_l5": l5_woba,
+            })
+            log.debug("Team %s: season wOBA=%.3f, L5 wOBA=%s",
+                      team_code, season_woba,
+                      f"{l5_woba:.3f}" if l5_woba else "n/a")
 
     if not update_rows: return 0
     sql = """
-        INSERT INTO team_xstats (team_code, season_year, team_xwoba, refreshed_at)
-        VALUES (%(team_code)s, %(season_year)s, %(team_xwoba)s, now())
+        INSERT INTO team_xstats (team_code, season_year, team_xwoba, team_woba_l5, refreshed_at)
+        VALUES (%(team_code)s, %(season_year)s, %(team_xwoba)s, %(team_woba_l5)s, now())
         ON CONFLICT (team_code, season_year) DO UPDATE SET
-          team_xwoba=EXCLUDED.team_xwoba, refreshed_at=now();
+          team_xwoba=EXCLUDED.team_xwoba,
+          team_woba_l5=EXCLUDED.team_woba_l5,
+          refreshed_at=now();
     """
     n = db.execute_many(sql, update_rows)
-    log.info("Updated %d team offensive xwOBA rows", n)
+    log.info("Updated %d team offensive wOBA rows (season + L5)", n)
     return n
 
 

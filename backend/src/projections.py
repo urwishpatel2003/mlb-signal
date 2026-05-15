@@ -297,20 +297,33 @@ def _compute_team_bullpen_er9(team_xstats_row, league_avg_er9=4.0) -> float:
 
 def _offensive_strength_scaler(team_xstats_row) -> float:
     """
-    Scale run projection based on team's offensive xwOBA vs league.
-    Returns a multiplier: strong offense (xwOBA > .320) → >1.0, weak → <1.0.
-    Capped at ±10% to avoid overriding the starter-centric projection.
+    Scale run projection based on team's offensive wOBA vs league.
+    Blends season average (60%) with last 5 games form (40%).
 
-    Uses team_xwoba from team_xstats (team's own hitting xwOBA, not pitcher's).
+    L5 form captures:
+    - Cold teams (injuries, slumps) → correctly downgraded
+    - Hot teams on winning streaks → correctly upgraded
+    Capped at ±12% to avoid overriding the starter-centric projection.
     """
     if not team_xstats_row:
         return 1.0
-    team_xwoba = team_xstats_row.get("team_xwoba") or team_xstats_row.get("est_woba")
-    if not team_xwoba:
+
+    season_woba = team_xstats_row.get("team_xwoba") or team_xstats_row.get("est_woba")
+    if not season_woba:
         return 1.0
-    delta = float(team_xwoba) - LEAGUE_XWOBA   # e.g. +0.015 for strong offense
-    scaler = 1.0 + delta * 3.0                  # 0.015 delta → 4.5% boost
-    return max(0.90, min(1.10, scaler))
+
+    season_woba = float(season_woba)
+    l5_woba = team_xstats_row.get("team_woba_l5")
+
+    if l5_woba is not None:
+        # Blend: 60% season, 40% recent form
+        blended_woba = 0.60 * season_woba + 0.40 * float(l5_woba)
+    else:
+        blended_woba = season_woba
+
+    delta = blended_woba - LEAGUE_XWOBA   # e.g. +0.015 strong, -0.020 cold
+    scaler = 1.0 + delta * 3.0            # 0.015 delta → 4.5% boost
+    return max(0.88, min(1.12, scaler))   # ±12% cap (was ±10%)
 
 
 # =============================================================================
