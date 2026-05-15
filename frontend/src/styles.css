@@ -813,8 +813,20 @@ html, body {
 .tr-split {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  gap: 12px;
   margin-bottom: 20px;
+}
+
+@media (max-width: 480px) {
+  .tr-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 481px) and (max-width: 700px) {
+  .tr-split {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 .tr-split-tile {
   background: var(--paper-2);
@@ -856,7 +868,7 @@ html, body {
 /* Prop breakdown tiles (K, Hits, ER, Outs) */
 .tr-prop-breakdown {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
   border-top: 1px solid var(--rule);
   padding-top: 18px;
