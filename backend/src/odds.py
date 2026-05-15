@@ -120,3 +120,4 @@ def attach_odds_to_games(games) -> int:
         updated += 1
     log.info("Updated odds on %d games", updated)
     return updated
+
