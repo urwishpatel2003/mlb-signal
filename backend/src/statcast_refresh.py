@@ -138,6 +138,7 @@ def _fetch_hitter_season_stats(mlb_id, season_year):
 
 
 def _fetch_hitter_last_x_games(mlb_id, season_year, n_games=15):
+l5_stats  = _fetch_hitter_last_x_games(mlb_id, season_year, n_games=5)
     url = f"{MLB_API_BASE}/people/{mlb_id}/stats"
     params = {"stats":"lastXGames","group":"hitting","season":season_year,"gameType":"R","limit":n_games}
     try:
@@ -333,6 +334,7 @@ def _refresh_hitter_budget(season_year: int) -> int:
         bb = _coerce_int((stats or {}).get("baseOnBalls")) or 0
         pitches_per_pa = pitches/pa if pa>0 and pitches>0 else None
         l15_woba = _compute_woba_from_stats(l15_stats) if l15_stats else None
+        l5_woba   = _compute_woba_from_stats(l5_stats)  if l5_stats  else None
         if pitches_per_pa is None and l15_woba is None: continue
         update_rows.append({
             "mlb_id": mlb_id, "season_year": season_year,
@@ -341,6 +343,7 @@ def _refresh_hitter_budget(season_year: int) -> int:
             "k_pct": so/pa if pa>0 else None,
             "bb_pct": bb/pa if pa>0 else None,
             "l15_woba": l15_woba,
+            "l5_woba": l5_woba,
         })
         success += 1
         if (i+1) % 50 == 0:
@@ -353,6 +356,7 @@ def _refresh_hitter_budget(season_year: int) -> int:
           k_pct=COALESCE(%(k_pct)s, k_pct),
           bb_pct=COALESCE(%(bb_pct)s, bb_pct),
           l15_woba=%(l15_woba)s,
+          l5_woba=%(l5_woba)s,
           refreshed_at=now()
         WHERE mlb_id=%(mlb_id)s AND season_year=%(season_year)s;
     """

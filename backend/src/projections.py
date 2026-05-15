@@ -199,7 +199,13 @@ def opp_lineup_xwoba(lineup, pitcher_hand, hitter_xstats, team_fallback,
         if xwoba is None: continue
         season_xwoba = float(xwoba)
         l15 = row.get("l15_woba")
-        blended = 0.70 * season_xwoba + 0.30 * float(l15) if l15 is not None else season_xwoba
+        l5 = row.get("l5_woba")
+        if l15 is not None and l5 is not None:
+            blended = 0.55 * season_xwoba + 0.25 * float(l15) + 0.20 * float(l5)
+        elif l15 is not None:
+            blended = 0.70 * season_xwoba + 0.30 * float(l15)
+        else:
+            blended = season_xwoba
         if l15 is not None: any_l15 = True
         platoon = _platoon_factor(spot.bat_side, pitcher_hand, row.get("splits"))
         pa_w = PA_WEIGHTS.get(spot.order, 4.0)
