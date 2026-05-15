@@ -513,17 +513,47 @@ def _refresh_team_offensive_xwoba(season_year: int) -> int:
         except Exception as e:
             log.debug("Team %s season stats failed: %s", team_code, e)
 
-        # L5 wOBA — last 5 games form
+        # L5 runs scored — fetch last 10 completed games from schedule
+        # Convert avg runs scored to wOBA proxy: ~4.5 runs = .320 wOBA (league avg)
+        # Formula: l5_woba_proxy = 0.320 + (l5_runs - 4.5) * 0.012
         l5_woba = None
         try:
-            url = f"{MLB_API_BASE}/teams/{team_id}/stats"
-            r = requests.get(url, params={"stats":"lastXGames","group":"hitting","season":season_year,"gameType":"R","limit":5}, timeout=REQUEST_TIMEOUT)
-            r.raise_for_status()
-            splits = r.json().get("stats",[{}])[0].get("splits",[])
-            if splits:
-                l5_woba = _compute_woba_from_stats(splits[0].get("stat",{}))
+            end_dt   = date.today().isoformat()
+            start_dt = (date.today() - timedelta(days=30)).isoformat()
+            sched_url = f"{MLB_API_BASE}/schedule"
+            sr = requests.get(sched_url, params={
+                "sportId": 1, "teamId": team_id,
+                "startDate": start_dt, "endDate": end_dt,
+                "gameType": "R", "hydrate": "linescore"
+            }, timeout=REQUEST_TIMEOUT)
+            sr.raise_for_status()
+            runs_scored = []
+            for date_block in sr.json().get("dates", []):
+                for game in date_block.get("games", []):
+                    status = (game.get("status") or {}).get("abstractGameState","")
+                    if status != "Final": continue
+                    teams = game.get("teams", {})
+                    away = teams.get("away", {})
+                    home_g = teams.get("home", {})
+                    away_id = (away.get("team") or {}).get("id")
+                    home_id = (home_g.get("team") or {}).get("id")
+                    if away_id == team_id:
+                        score = away.get("score")
+                    elif home_id == team_id:
+                        score = home_g.get("score")
+                    else:
+                        continue
+                    if score is not None:
+                        runs_scored.append(int(score))
+            # Take last 5 completed games
+            recent_5 = runs_scored[-5:] if len(runs_scored) >= 5 else runs_scored
+            if recent_5:
+                l5_avg_runs = sum(recent_5) / len(recent_5)
+                # Convert to wOBA proxy: league avg 4.5 runs ≈ .320 wOBA
+                l5_woba = round(0.320 + (l5_avg_runs - 4.5) * 0.012, 4)
+                l5_woba = max(0.260, min(0.390, l5_woba))  # cap at reasonable range
         except Exception as e:
-            log.debug("Team %s L5 stats failed: %s", team_code, e)
+            log.debug("Team %s L5 runs fetch failed: %s", team_code, e)
 
         if season_woba:
             update_rows.append({
