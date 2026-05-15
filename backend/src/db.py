@@ -197,14 +197,14 @@ def insert_edge(run_id, e):
           run_id,game_pk,kind,category,pitcher_mlb_id,pitcher_name,
           team_code,opp_team_code,line,proj_value,edge,lean,
           confidence_tier,conviction_pct,flagged,notes,
-          over_price,under_price
+          over_price,under_price,stake_units
         ) VALUES (
           %(run_id)s,%(game_pk)s,%(kind)s,%(category)s,%(pitcher_mlb_id)s,%(pitcher_name)s,
           %(team_code)s,%(opp_team_code)s,%(line)s,%(proj_value)s,%(edge)s,%(lean)s,
           %(confidence_tier)s,%(conviction_pct)s,%(flagged)s,%(notes)s,
-          %(over_price)s,%(under_price)s
+          %(over_price)s,%(under_price)s,%(stake_units)s
         ) RETURNING edge_id""",
-        {"over_price": None, "under_price": None, **e, "run_id": run_id})
+        {"over_price": None, "under_price": None, "stake_units": 1.0, **e, "run_id": run_id})
     return int(row["edge_id"])
 
 def get_latest_run(run_date):

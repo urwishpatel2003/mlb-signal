@@ -149,8 +149,9 @@ def grade_edge(e: dict, actual: float, default_juice: int = -110) -> dict:
         juice  = default_juice
         result, profit = "NO_ACTION", 0.0
 
-    return {"result": result, "profit_units": round(profit, 4),
-            "actual": actual, "juice_used": juice}
+    stake = float(e.get("stake_units") or 1.0)
+    return {"result": result, "profit_units": round(profit * stake, 4),
+            "actual": actual, "juice_used": juice, "stake_units": stake}
 
 
 def _profit_for(juice: int) -> float:

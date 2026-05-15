@@ -257,14 +257,26 @@ def run(trigger="manual"):
                 "away_ml":away_ml,"home_ml":home_ml,
                 "away_ml_implied":away_ml_implied,"home_ml_implied":home_ml_implied,
                 "ml_edge_team":ml_edge_team,"ml_edge_pct":ml_edge_pct,"hfa_applied":hfa_applied})
-            for e in compute_edges_for_game(game_pk=g.game_pk,game=asdict(g),
+            game_edges = compute_edges_for_game(game_pk=g.game_pk,game=asdict(g),
                 away_proj=away_proj,home_proj=home_proj,
                 market_total=market_total,market_f5_total=market_f5_total,
                 away_ml=away_ml,home_ml=home_ml,full_total=full_total,f5_total=f5_total,
                 home_runs=home_runs,away_runs=away_runs,
                 home_win_prob=home_win_prob,away_win_prob=away_win_prob,
                 game_row=game_row,away_team_xstats=all_team.get(g.away_team),
-                home_team_xstats=all_team.get(g.home_team)):
+                home_team_xstats=all_team.get(g.home_team))
+            # Correlated edges: F5 + Full Game same direction -> 0.5u each
+            _total_e = [e for e in game_edges if e["kind"]=="total"]
+            _f5_e    = [e for e in game_edges if e["kind"]=="f5"]
+            for _te in _total_e:
+                for _fe in _f5_e:
+                    if _te["lean"] == _fe["lean"]:
+                        _te["stake_units"] = 0.5
+                        _fe["stake_units"] = 0.5
+                        log.info("Correlated F5+Full: %s @ %s %s -> 0.5u each",
+                                 _te["team_code"], _te["opp_team_code"], _te["lean"])
+            for e in game_edges:
+                e.setdefault("stake_units", 1.0)
                 pft=(away_proj if e.get("pitcher_mlb_id")==(away_proj.pitcher_mlb_id if away_proj else None)
                      else (home_proj if e.get("pitcher_mlb_id")==(home_proj.pitcher_mlb_id if home_proj else None) else None))
                 e["confidence_tier"]=confidence_tier(e,pft)
