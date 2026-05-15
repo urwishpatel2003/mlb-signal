@@ -57,20 +57,34 @@ def fetch_current_odds() -> list[dict]:
     """Fetch full-game + F5 odds. Returns merged list per game."""
     full_data = _get_raw("h2h,totals")
 
-    # F5 totals from Odds API (totals_1st_5_innings market)
-    f5_raw = _get_raw("totals_1st_5_innings")
+    # F5 totals — per-event endpoint (bulk endpoint returns 422 on our tier)
+    # Reuse event IDs from full_data to avoid extra API calls
     f5_lookup: dict[tuple, dict] = {}
-    for _f5g in f5_raw:
-        _ac, _hc = _to_code(_f5g.get("away_team","")), _to_code(_f5g.get("home_team",""))
-        if not _ac or not _hc or (_ac,_hc) in f5_lookup: continue
-        def _parse_f5(outcomes):
-            t = ov = un = None
-            for o in outcomes:
-                if o.get("name")=="Over":  t=float(o["point"]); ov=int(o["price"])
-                elif o.get("name")=="Under": un=int(o["price"])
-            return {"market_f5_total":t,"market_f5_over_price":ov,"market_f5_under_price":un} if t else None
-        _res = _best_book(_f5g.get("bookmakers",[]), "totals_1st_5_innings", _parse_f5)
-        if _res: f5_lookup[(_ac,_hc)] = _res
+    api_key = _api_key()
+    if api_key:
+        for _game in full_data:
+            _eid = _game.get("id")
+            _ac  = _to_code(_game.get("away_team",""))
+            _hc  = _to_code(_game.get("home_team",""))
+            if not _eid or not _ac or not _hc: continue
+            try:
+                _fr = requests.get(
+                    f"{BASE}/sports/{SPORT}/events/{_eid}/odds",
+                    params={"apiKey":api_key,"regions":REGIONS,
+                            "markets":"totals_1st_5_innings","oddsFormat":ODDS_FORMAT},
+                    timeout=8)
+                if _fr.status_code != 200: continue
+                _fd = _fr.json()
+                def _parse_f5(outcomes):
+                    t = ov = un = None
+                    for o in outcomes:
+                        if o.get("name")=="Over":  t=float(o["point"]); ov=int(o["price"])
+                        elif o.get("name")=="Under": un=int(o["price"])
+                    return {"market_f5_total":t,"market_f5_over_price":ov,"market_f5_under_price":un} if t else None
+                _res = _best_book(_fd.get("bookmakers",[]), "totals_1st_5_innings", _parse_f5)
+                if _res: f5_lookup[(_ac,_hc)] = _res
+            except Exception as _fe:
+                log.debug("F5 per-event fetch failed for %s@%s: %s", _ac, _hc, _fe)
 
     out = []
     for game in full_data:
