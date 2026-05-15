@@ -402,6 +402,8 @@ def project_pitcher(
         # Whiff rate is more stable (reflects pure stuff) vs k_pct (fluctuates with sequencing)
         raw_k_pct  = pitcher_xstats.get("k_pct")
         whiff_pct  = pitcher_xstats.get("whiff_pct")
+        l5_k_pct   = pitcher_xstats.get("l5_k_pct")
+        l5_era_val = pitcher_xstats.get("l5_era")
 
         if whiff_pct is not None and raw_k_pct is not None:
             # Blend: whiff-based K estimate + actual k_pct
@@ -420,6 +422,9 @@ def project_pitcher(
         lineup_k = opp_lineup_k_pct(opp_lineup, hitter_xstats)
         if lineup_k is not None:
             k_pct *= max(0.85, min(1.15, lineup_k / LEAGUE_K_PCT))
+        # Blend in L5 recent form (35% weight)
+        if l5_k_pct is not None:
+            k_pct = 0.65 * k_pct + 0.35 * float(l5_k_pct)
         k_pct = max(0.14, min(0.38, k_pct))
 
         # BB9: real data with Bayesian shrinkage
@@ -430,6 +435,10 @@ def project_pitcher(
         else:
             bb9 = LEAGUE_BB9 * (1.20 if true_era > 5.5 else 0.90 if true_era < 3.0 else 1.0)
 
+        # Blend L5 era into true_era — recent form matters
+        if l5_era_val is not None:
+            true_era = 0.65 * true_era + 0.35 * float(l5_era_val)
+            true_era = max(1.5, min(8.0, true_era))
         source = "statcast"
         high_variance = true_era > 5.0
 
@@ -501,7 +510,12 @@ def project_pitcher(
     # Hits: est_ba * avg_bf_per_start — market aligned
     hits_lineup_adj = 1.0 + woba_delta * 1.5
     hits_proj = h_est_ba * avg_bf_per_start * wx_run * pf_runs * hits_lineup_adj
-    er9     = (true_era + woba_delta * 7) * wx_run * pf_runs
+    pf_hr_val = float((park or {}).get("pf_hr") or 100) / 100.0 if park else 1.0
+    _fb_pct   = float((pitcher_xstats or {}).get("fb_pct") or LEAGUE_FB_PCT)
+    _hr_fb    = float((pitcher_xstats or {}).get("hr_fb_rate") or LEAGUE_HR_FB)
+    _bf9      = avg_bf_per_start / max(ip, 0.1) * 9
+    _hr9      = _fb_pct * _hr_fb * (_bf9 / 3.0) * pf_hr_val
+    er9 = (true_era + woba_delta * 7) * wx_run * pf_runs * 0.65 + _hr9 * 1.4 * 0.35
     # K: k_pct * avg_bf_per_start (actual BF per start, not theoretical)
     k_proj  = k_pct * avg_bf_per_start * pf_so
     bb9_adj = bb9 * pf_bb
@@ -568,8 +582,10 @@ def project_game_total(
     away_bp_pad = 0.5 if away_proj.high_variance_flag else 0.0
     home_bp_pad = 0.5 if home_proj.high_variance_flag else 0.0
 
-    away_bp_er = away_bp_innings * (away_bp_er9 / 9) * park_wx + away_bp_pad
-    home_bp_er = home_bp_innings * (home_bp_er9 / 9) * park_wx + home_bp_pad
+    _pf_hr_bp  = float((park or {}).get("pf_hr") or 100) / 100.0
+    _bp_hr_adj = 1.0 + (_pf_hr_bp - 1.0) * 0.5
+    away_bp_er = away_bp_innings * (away_bp_er9 / 9) * park_wx * _bp_hr_adj + away_bp_pad
+    home_bp_er = home_bp_innings * (home_bp_er9 / 9) * park_wx * _bp_hr_adj + home_bp_pad
 
     # Improvement #5: offensive scaler
     # home_runs = runs scored by home offense (away pitching allows)

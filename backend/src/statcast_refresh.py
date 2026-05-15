@@ -244,8 +244,14 @@ def _refresh_pitcher_budget(season_year: int) -> int:
             recent_5 = sorted_starts[:5]
             recent_ips = [(_parse_ip((s.get("stat") or {}).get("inningsPitched")) or 0) for s in recent_5]
             l5_avg_ip = round(sum(recent_ips) / len(recent_ips), 2) if recent_ips else None
+            l5_so  = sum(_coerce_int((s.get("stat") or {}).get("strikeOuts")) or 0 for s in recent_5)
+            l5_tbf = sum(_coerce_int((s.get("stat") or {}).get("battersFaced")) or 0 for s in recent_5)
+            l5_k_pct = round(l5_so / l5_tbf, 4) if l5_tbf > 0 else None
+            l5_er  = sum((_coerce_float((s.get("stat") or {}).get("earnedRuns")) or 0) for s in recent_5)
+            l5_ip_s = sum((_parse_ip((s.get("stat") or {}).get("inningsPitched")) or 0) for s in recent_5)
+            l5_era = round(l5_er * 9.0 / l5_ip_s, 2) if l5_ip_s > 3 else None
         else:
-            l5_avg_ip = None
+            l5_avg_ip = l5_k_pct = l5_era = None
 
         # Prior year IP — fetch season stats for previous year
         prev_year = season_year - 1
@@ -274,6 +280,8 @@ def _refresh_pitcher_budget(season_year: int) -> int:
             "last_start_date": last_start_date.isoformat() if last_start_date else None,
             "days_rest": days_rest,
             "l5_avg_ip": l5_avg_ip,
+            "l5_k_pct": l5_k_pct,
+            "l5_era": l5_era,
             "ip_total_prev": ip_total_prev,
             "gs_prev": gs_prev,
         })
@@ -295,6 +303,8 @@ def _refresh_pitcher_budget(season_year: int) -> int:
           last_start_date=%(last_start_date)s,
           days_rest=%(days_rest)s,
           l5_avg_ip=%(l5_avg_ip)s,
+          l5_k_pct=%(l5_k_pct)s,
+          l5_era=%(l5_era)s,
           ip_total_prev=%(ip_total_prev)s,
           gs_prev=%(gs_prev)s,
           refreshed_at=now()
