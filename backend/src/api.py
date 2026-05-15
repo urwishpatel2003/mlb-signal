@@ -470,7 +470,30 @@ def performance_overall():
             "profit_units": round(profit, 2),
         })
 
-    return {"overall": overall, "by_category": by_category}
+    # ML fav/dog breakdown using edge line (negative = fav, positive = dog)
+    ml_rows = db.fetchall("""
+        SELECT
+            CASE WHEN e.line < 0 THEN 'FAV' ELSE 'DOG' END as ml_type,
+            COUNT(*) FILTER (WHERE er.result = 'WIN')  AS wins,
+            COUNT(*) FILTER (WHERE er.result = 'LOSS') AS losses,
+            COUNT(*) FILTER (WHERE er.result = 'PUSH') AS pushes,
+            COALESCE(SUM(er.profit_units), 0)::float     AS profit_units
+        FROM edge_results er
+        JOIN edges e ON e.edge_id = er.edge_id
+        WHERE e.flagged = TRUE AND e.kind = 'ml'
+        GROUP BY ml_type
+        ORDER BY ml_type
+    """)
+    ml_breakdown = []
+    for r in ml_rows:
+        ml_breakdown.append({
+            "label": "Favourite" if r["ml_type"] == "FAV" else "Underdog",
+            "wins": int(r["wins"] or 0),
+            "losses": int(r["losses"] or 0),
+            "pushes": int(r["pushes"] or 0),
+            "profit_units": round(float(r["profit_units"] or 0), 2),
+        })
+    return {"overall": overall, "by_category": by_category, "ml_breakdown": ml_breakdown}
 # ============================================================================
 # Manual trigger endpoints
 # Hit these from your phone / browser to manually fire any scheduled job.

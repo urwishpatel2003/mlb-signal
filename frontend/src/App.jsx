@@ -470,7 +470,7 @@ function PerformanceView({ perf }) {
   return (
     <section>
       <div className="section-header"><h2>Track record.</h2><span className="deck">Cumulative &amp; daily</span></div>
-      <OverallCard summary={summary} byCategory={byCategory}/>
+      <OverallCard summary={summary} byCategory={byCategory} mlBreakdown={ov.ml_breakdown||[]}/>
       <div className="track-daily-stack">{perf.byDate.map(day=><DayCard key={day.run_date} day={day}/>)}</div>
     </section>
   );
@@ -496,7 +496,7 @@ function SubBreakdown({ rows, labelMap }) {
   );
 }
 
-function OverallCard({ summary, byCategory }) {
+function OverallCard({ summary, byCategory, mlBreakdown }) {
   const w=summary.wins||0, l=summary.losses||0, p=summary.pushes||0;
   const profit = summary.profit_units||0;
 
@@ -563,6 +563,18 @@ function OverallCard({ summary, byCategory }) {
           <div className="tr-split-record">{ml.w}-{ml.l}</div>
           <div className="tr-split-rate">{fmtRate(ml.w,ml.l)}</div>
           <div className={'tr-split-profit '+(ml.profit>=0?'pos':'neg')}>{fmtSign(ml.profit)}u</div>
+          {mlBreakdown&&mlBreakdown.length>0&&(
+            <div className="tr-sub-breakdown">
+              {mlBreakdown.map((r,i)=>(
+                <div key={i} className="tr-sub-row">
+                  <span className="tr-sub-label">{r.label}</span>
+                  <span className="tr-sub-record">{r.wins}-{r.losses}</span>
+                  <span className="tr-sub-rate">{fmtRate(r.wins,r.losses)}</span>
+                  <span className={'tr-sub-profit '+(r.profit_units>=0?'pos':'neg')}>{fmtSign(r.profit_units)}u</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         )}
 
