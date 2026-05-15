@@ -336,6 +336,7 @@ def performance_by_date():
           e.kind,
           e.category,
           e.lean,
+          e.lean,
           e.team_code,
           e.opp_team_code,
           e.pitcher_name,
