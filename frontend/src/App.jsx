@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
-const TABS = ['Games', 'F5 Totals', 'Moneyline', 'Pitcher Props', 'Pitchers', 'Slate', 'Track Record'];
+const TABS = ['Full Game O/U', 'F5 O/U', 'Moneyline', 'Pitcher Props', 'Pitchers', 'Slate', 'Track Record'];
 const MARKET_LABELS = {
   Total: 'Game Total', F5: 'F5 O/U', ML: 'Moneyline',
   K: 'Pitcher Strikeouts', Hits: 'Pitcher Hits Allowed',
@@ -86,8 +86,8 @@ export default function App() {
       <nav className="tabs">
         {TABS.map(t => {
           let count = '';
-          if (t==='Games')         count = gameTotalEdges.length ? ` (${gameTotalEdges.length})` : '';
-          if (t==='F5 Totals')     count = f5Edges.length        ? ` (${f5Edges.length})`        : '';
+          if (t==='Full Game O/U')         count = gameTotalEdges.length ? ` (${gameTotalEdges.length})` : '';
+          if (t==='F5 O/U')     count = f5Edges.length        ? ` (${f5Edges.length})`        : '';
           if (t==='Moneyline')     count = mlEdges.length        ? ` (${mlEdges.length})`        : '';
           if (t==='Pitcher Props') count = propEdges.length      ? ` (${propEdges.length})`      : '';
           if (t==='Pitchers')      count = slate?.projections?.length ? ` (${slate.projections.length})` : '';
@@ -103,8 +103,8 @@ export default function App() {
       {error   && <div className="empty">Error: {error}</div>}
       {!loading && !error && slate && (
         <>
-          {tab==='Games'         && <EdgesView edges={gameTotalEdges} kind="game" />}
-          {tab==='F5 Totals'     && <F5View edges={f5Edges} games={slate.games} />}
+          {tab==='Full Game O/U'         && <EdgesView edges={gameTotalEdges} kind="game" />}
+          {tab==='F5 O/U'     && <F5View edges={f5Edges} games={slate.games} />}
           {tab==='Moneyline'     && <MoneylineView edges={mlEdges} games={slate.games} />}
           {tab==='Pitcher Props' && <EdgesView edges={propEdges} kind="prop" />}
           {tab==='Pitchers'      && <PitchersView projections={slate.projections} games={slate.games} />}
@@ -701,3 +701,4 @@ function DayCard({ day }) {
     </div>
   );
 }
+
