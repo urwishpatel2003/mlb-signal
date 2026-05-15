@@ -1288,3 +1288,198 @@ html, body {
 .cell-pick.lean-OVER .pick-odds  { color: var(--moss); }
 .cell-pick.lean-UNDER .pick-odds { color: var(--vermillion); }
 .ml-row .cell-pick .pick-odds    { color: inherit; }
+
+/* ============================================================================
+   RESPONSIVE — Mobile first, unified breakpoints
+   480px: small phones | 640px: large phones | 900px: tablets | 1200px: desktop
+   ============================================================================ */
+
+/* ---- Tabs: scroll horizontally on mobile ---- */
+@media (max-width: 768px) {
+  .tabs {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-wrap: nowrap;
+    padding-bottom: 0;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    padding: 10px 14px 8px;
+    font-size: 11px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+}
+
+/* ---- App container ---- */
+@media (max-width: 640px) {
+  .app { padding: 12px 12px 48px; }
+}
+
+/* ---- Masthead ---- */
+@media (max-width: 640px) {
+  .masthead h1 { font-size: clamp(36px, 12vw, 64px); }
+  .masthead-top { font-size: 9px; }
+  .masthead-sub { font-size: 10px; }
+}
+
+/* ---- Section header ---- */
+@media (max-width: 640px) {
+  .section-header { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .section-header h2 { font-size: 24px; }
+  .section-header .deck { font-size: 10px; }
+}
+
+/* ---- Edge rows (Games / Props) ---- */
+@media (max-width: 900px) {
+  .edges-thead, .edge-row {
+    grid-template-columns: minmax(140px,1.4fr) minmax(100px,1fr) 60px 70px 80px 100px;
+    gap: 8px; padding: 10px;
+  }
+  .conv-bar { display: none; }
+  .cell-market { font-size: 11px; }
+  .cell-subject .subject-main { font-size: 14px; }
+}
+
+@media (max-width: 640px) {
+  .edges-thead { display: none; }
+  .edge-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "subject conv"
+      "market  pick"
+      "line    proj";
+    gap: 4px 10px;
+    padding: 12px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .cell-subject  { grid-area: subject; }
+  .cell-market   { grid-area: market; font-size: 11px; color: var(--ink-3); }
+  .cell-num.cell-proj { grid-area: proj; text-align: right; font-weight: 700; }
+  .cell-num:not(.cell-proj) { grid-area: line; }
+  .cell-pick     { grid-area: pick; text-align: right; }
+  .cell-conviction { grid-area: conv; text-align: right; }
+  .pick-odds { font-size: 9px; }
+}
+
+/* ---- F5 rows ---- */
+@media (max-width: 640px) {
+  .edges-thead.f5-thead { display: none; }
+  .edge-row.f5-row {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "subject conv"
+      "line    pick"
+      "proj    edge";
+    gap: 4px 10px;
+    padding: 12px;
+  }
+}
+
+/* ---- Moneyline table ---- */
+@media (max-width: 900px) {
+  .ml-thead, .ml-row {
+    grid-template-columns: minmax(140px,1.6fr) 90px 70px 80px 70px 70px 50px;
+    gap: 0 8px; padding: 10px 12px;
+  }
+}
+
+@media (max-width: 640px) {
+  .ml-thead { display: none; }
+  .ml-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "subject pick"
+      "model   odds"
+      "implied edge";
+    gap: 4px 10px;
+    padding: 12px;
+  }
+  .ml-row .cell-num:nth-child(5) { display: none; } /* hide implied */
+  .ml-disclaimer { font-size: 9px; }
+}
+
+/* ---- Prop category tabs ---- */
+@media (max-width: 640px) {
+  .prop-cat-tabs { gap: 6px; flex-wrap: wrap; }
+  .prop-cat-tab { font-size: 10px; padding: 6px 10px; }
+}
+
+/* ---- Pitcher table: horizontal scroll ---- */
+@media (max-width: 1200px) {
+  .pitchers-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}
+
+/* ---- Game cards (Slate tab) ---- */
+@media (max-width: 640px) {
+  .games { display: flex; flex-direction: column; gap: 12px; }
+  .game-card { padding: 14px; }
+  .game-header { flex-direction: column; gap: 4px; }
+  .game-totals { flex-wrap: wrap; gap: 8px 16px; }
+}
+
+/* ---- Track record ---- */
+@media (max-width: 640px) {
+  .tr-overall { padding: 16px; }
+  .tr-record { font-size: 36px; }
+  .tr-rate { font-size: 20px; }
+  .tr-profit { font-size: 16px; }
+  .tr-split { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .tr-split-record { font-size: 22px; }
+  .tr-split-label { font-size: 10px; }
+  .tr-prop-breakdown { gap: 6px; }
+  .tr-prop-tile { min-width: 64px; padding: 8px 10px; }
+  .tr-prop-record { font-size: 18px; }
+}
+
+@media (max-width: 640px) {
+  /* Day cards */
+  .day-header { padding: 12px 14px; }
+  .day-date { font-size: 14px; }
+  .day-wl { font-size: 18px; }
+  .day-rate { font-size: 11px; }
+  .day-units { font-size: 13px; }
+
+  /* Groups */
+  .day-group-header { padding: 10px 14px; }
+  .day-group-name { font-size: 10px; letter-spacing: 0.1em; }
+  .day-group-stats { font-size: 10px; gap: 8px; }
+
+  /* Prop cat */
+  .prop-cat-header { padding: 8px 14px 8px 24px; }
+  .prop-cat-name { font-size: 13px; }
+  .prop-cat-stats { font-size: 10px; gap: 8px; }
+
+  /* Bucket */
+  .bucket-block-header { padding: 7px 14px 7px 32px; }
+  .bucket-block-stats { font-size: 10px; gap: 8px; }
+
+  /* Play rows */
+  .play-row {
+    grid-template-columns: 1fr 42px 42px 56px;
+    padding: 5px 14px 5px 40px;
+    font-size: 10px;
+    gap: 4px;
+  }
+  .play-actual { display: none; }
+  .play-subject { font-size: 11px; }
+}
+
+/* ---- Footer ---- */
+@media (max-width: 640px) {
+  .footer { flex-direction: column; gap: 4px; font-size: 9px; }
+}
+
+/* ---- Loading / empty states ---- */
+.loading, .empty {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink-3);
+  padding: 32px 16px;
+  text-align: center;
+  letter-spacing: 0.05em;
+}
