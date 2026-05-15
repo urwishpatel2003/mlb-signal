@@ -1524,3 +1524,20 @@ html, body {
 .tr-sub-profit { font-weight: 700; font-feature-settings: 'tnum'; }
 .tr-sub-profit.pos { color: var(--moss); }
 .tr-sub-profit.neg { color: var(--vermillion); }
+
+/* Fix: tr-split single column on phones - overrides all previous rules */
+@media (max-width: 500px) {
+  .tr-split {
+    grid-template-columns: 1fr !important;
+  }
+  .tr-split-tile {
+    min-width: 0;
+    width: 100%;
+  }
+  .tr-overall {
+    padding: 14px;
+  }
+  .tr-split-record {
+    font-size: 20px !important;
+  }
+}
