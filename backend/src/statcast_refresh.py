@@ -634,6 +634,114 @@ def _refresh_pitcher_whiff(season_year: int) -> int:
     return n
 
 
+
+# =============================================================================
+# FB% and xFIP from Baseball Savant batted-ball leaderboard
+# =============================================================================
+
+SAVANT_BATTED_BALL_URL = (
+    "https://baseballsavant.mlb.com/leaderboard/batted-ball"
+    "?year={year}&type=pitcher&min=1&csv=true"
+)
+
+
+def _refresh_pitcher_fb_pct(season_year: int) -> int:
+    """
+    Fetch fly ball rate (fb_rate) from Baseball Savant batted-ball leaderboard.
+    Also computes xFIP from fb_pct + hr_fb_rate + k_pct + bb9 when available.
+
+    Endpoint returns: id, name, bbe, gb_rate, air_rate, fb_rate, ld_rate, ...
+    id = MLB player_id — matches our mlb_id directly.
+    fb_rate is already a rate (0-1 scale? or percent?) — check first row.
+    """
+    import csv, io
+    url = SAVANT_BATTED_BALL_URL.format(year=season_year)
+    try:
+        r = requests.get(url, headers=SAVANT_HEADERS, timeout=20)
+        r.raise_for_status()
+        text = r.text
+    except Exception as e:
+        log.warning("Savant batted-ball fetch failed: %s", e)
+        return 0
+
+    reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
+    rows = list(reader)
+    if not rows:
+        log.warning("No batted-ball rows parsed")
+        return 0
+
+    # Check scale of fb_rate from first row
+    first = rows[0]
+    fb_sample = float(first.get("fb_rate") or 0)
+    # If > 1 it's a percentage (e.g. 35.5 means 35.5%), divide by 100
+    scale = 100.0 if fb_sample > 1.0 else 1.0
+    log.info("Savant batted-ball: %d rows, fb_rate scale=%s (sample=%.2f)",
+             len(rows), scale, fb_sample)
+
+    # Get existing pitcher data for xFIP computation
+    existing = {r["mlb_id"]: r for r in db.fetchall(
+        "SELECT mlb_id, k_pct, bb9, tbf, ip_total FROM pitcher_xstats WHERE season_year=%s",
+        (season_year,)
+    )}
+
+    update_rows = []
+    for row in rows:
+        try:
+            pid      = int(row.get("id") or 0)
+            fb_rate  = float(row.get("fb_rate") or 0) / scale
+            if pid == 0 or fb_rate == 0:
+                continue
+            if pid not in existing:
+                continue
+
+            px = existing[pid]
+            fb_pct = round(fb_rate, 4)
+
+            # Compute xFIP if we have the components
+            # xFIP = ((13 * (FB * lgHR/FB)) + (3 * (BB + HBP)) - (2 * K)) / IP + const
+            # We approximate using rates: xFIP ≈ (13*fb_pct*lgHR/FB*BF - 2*k_pct*BF + 3*bb9/9*IP) / IP + 3.10
+            k_pct_val  = _coerce_float(px.get("k_pct"))
+            bb9_val    = _coerce_float(px.get("bb9"))
+            ip_val     = _parse_ip(str(px.get("ip_total") or 0))
+            tbf_val    = _coerce_int(px.get("tbf")) or 0
+
+            xfip = None
+            if k_pct_val and bb9_val and ip_val and ip_val > 20 and tbf_val > 0:
+                lg_hr_fb = 0.118  # league average HR/FB rate
+                # Estimated components per IP
+                k_per_9   = k_pct_val * (tbf_val / ip_val) * 3  # K/9 via k_pct * BF/IP * 3
+                bb_per_9  = bb9_val
+                fb_per_9  = fb_pct * (tbf_val / ip_val) * 3     # FB/9 via fb_pct * BF/IP * 3
+                hr_exp_9  = fb_per_9 * lg_hr_fb
+                xfip_raw  = (13 * hr_exp_9 + 3 * bb_per_9 - 2 * k_per_9) + 3.10
+                xfip      = round(max(1.5, min(8.0, xfip_raw)), 2)
+
+            update_rows.append({
+                "mlb_id":      pid,
+                "season_year": season_year,
+                "fb_pct":      fb_pct,
+                "xfip":        xfip,
+            })
+        except (ValueError, TypeError) as e:
+            log.debug("Row parse error: %s", e)
+            continue
+
+    if not update_rows:
+        log.warning("No fb_pct rows matched existing pitchers")
+        return 0
+
+    sql = """
+        UPDATE pitcher_xstats SET
+          fb_pct=%(fb_pct)s,
+          xfip=%(xfip)s,
+          refreshed_at=now()
+        WHERE mlb_id=%(mlb_id)s AND season_year=%(season_year)s;
+    """
+    n = db.execute_many(sql, update_rows)
+    log.info("Updated fb_pct and xfip for %d pitchers", n)
+    return n
+
+
 # =============================================================================
 # Top-level refresh
 # =============================================================================
@@ -663,6 +771,7 @@ def refresh_statcast(season_year: Optional[int] = None) -> dict:
         for name, fn, key in [
             ("pitcher budget+ratios+rest", _refresh_pitcher_budget,      "n_pitcher_budget"),
             ("pitcher whiff+contact rate", _refresh_pitcher_whiff,       "n_pitcher_whiff"),
+            ("pitcher fb_pct+xfip",        _refresh_pitcher_fb_pct,      "n_pitcher_fb_pct"),
             ("hitter budget+L15",          _refresh_hitter_budget,        "n_hitter_budget"),
             ("hitter splits",              _refresh_hitter_splits,        "n_hitter_splits"),
             ("team bullpen (season+L7)",   _refresh_team_bullpen_stats,   "n_team_bullpen"),
