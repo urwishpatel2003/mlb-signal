@@ -1483,3 +1483,32 @@ html, body {
   text-align: center;
   letter-spacing: 0.05em;
 }
+
+/* Sub-breakdown rows inside split tiles */
+.tr-sub-breakdown {
+  margin-top: 8px;
+  border-top: 1px solid var(--rule);
+  padding-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.tr-sub-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 10px;
+  gap: 6px;
+}
+.tr-sub-label {
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--ink-2);
+  min-width: 40px;
+}
+.tr-sub-record { color: var(--ink); font-feature-settings: 'tnum'; }
+.tr-sub-rate   { color: var(--ink-3); }
+.tr-sub-profit { font-weight: 700; font-feature-settings: 'tnum'; }
+.tr-sub-profit.pos { color: var(--moss); }
+.tr-sub-profit.neg { color: var(--vermillion); }

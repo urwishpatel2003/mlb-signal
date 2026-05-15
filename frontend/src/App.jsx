@@ -476,21 +476,56 @@ function PerformanceView({ perf }) {
   );
 }
 
+function SubBreakdown({ rows, labelMap }) {
+  if (!rows || rows.length === 0) return null;
+  return (
+    <div className="tr-sub-breakdown">
+      {rows.map((r,i) => {
+        const label = labelMap ? (labelMap[r.lean] || r.lean) : r.lean;
+        const p = r.profit_units || 0;
+        return (
+          <div key={i} className="tr-sub-row">
+            <span className="tr-sub-label">{label}</span>
+            <span className="tr-sub-record">{r.wins}-{r.losses}{r.pushes>0?'-'+r.pushes:''}</span>
+            <span className="tr-sub-rate">{fmtRate(r.wins,r.losses)}</span>
+            <span className={'tr-sub-profit '+(p>=0?'pos':'neg')}>{fmtSign(p)}u</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function OverallCard({ summary, byCategory }) {
   const w=summary.wins||0, l=summary.losses||0, p=summary.pushes||0;
   const profit = summary.profit_units||0;
+
+  // Group by kind
   const totals = byCategory.filter(r=>r.kind==='total');
+  const f5s    = byCategory.filter(r=>r.kind==='f5');
   const mls    = byCategory.filter(r=>r.kind==='ml');
   const props  = byCategory.filter(r=>r.kind==='prop');
-  const totW=totals.reduce((s,r)=>s+(r.wins||0),0);
-  const totL=totals.reduce((s,r)=>s+(r.losses||0),0);
-  const totProfit=totals.reduce((s,r)=>s+(r.profit_units||0),0);
-  const mlW=mls.reduce((s,r)=>s+(r.wins||0),0);
-  const mlL=mls.reduce((s,r)=>s+(r.losses||0),0);
-  const mlProfit=mls.reduce((s,r)=>s+(r.profit_units||0),0);
-  const prpW=props.reduce((s,r)=>s+(r.wins||0),0);
-  const prpL=props.reduce((s,r)=>s+(r.losses||0),0);
-  const prpProfit=props.reduce((s,r)=>s+(r.profit_units||0),0);
+
+  const sum = arr => ({
+    w: arr.reduce((s,r)=>s+(r.wins||0),0),
+    l: arr.reduce((s,r)=>s+(r.losses||0),0),
+    p: arr.reduce((s,r)=>s+(r.pushes||0),0),
+    profit: arr.reduce((s,r)=>s+(r.profit_units||0),0),
+  });
+
+  const tot = sum(totals);
+  const f5  = sum(f5s);
+  const ml  = sum(mls);
+  const prp = sum(props);
+
+  // ML: classify as fav (negative odds) or dog (positive odds)
+  // We don't have odds in byCategory yet — just show total for now
+  // OVER/UNDER breakdown from lean field
+  const totOver  = totals.filter(r=>r.lean==='OVER');
+  const totUnder = totals.filter(r=>r.lean==='UNDER');
+  const f5Over   = f5s.filter(r=>r.lean==='OVER');
+  const f5Under  = f5s.filter(r=>r.lean==='UNDER');
+
   return (
     <div className="tr-overall">
       <div className="tr-overall-label">ALL-TIME RECORD</div>
@@ -499,37 +534,61 @@ function OverallCard({ summary, byCategory }) {
         <span className="tr-rate">{fmtRate(w,l)}</span>
         <span className={'tr-profit '+(profit>=0?'pos':'neg')}>{fmtSign(profit)}u</span>
       </div>
+
       <div className="tr-split">
+        {/* Game Totals */}
         <div className="tr-split-tile">
-          <div className="tr-split-label">Game Totals</div>
-          <div className="tr-split-record">{totW}-{totL}</div>
-          <div className="tr-split-rate">{fmtRate(totW,totL)}</div>
-          <div className={'tr-split-profit '+(totProfit>=0?'pos':'neg')}>{fmtSign(totProfit)}u</div>
+          <div className="tr-split-label">Full Game O/U</div>
+          <div className="tr-split-record">{tot.w}-{tot.l}</div>
+          <div className="tr-split-rate">{fmtRate(tot.w,tot.l)}</div>
+          <div className={'tr-split-profit '+(tot.profit>=0?'pos':'neg')}>{fmtSign(tot.profit)}u</div>
+          <SubBreakdown rows={[...totOver.map(r=>({...r,lean:'OVER'})),...totUnder.map(r=>({...r,lean:'UNDER'}))]} />
         </div>
+
+        {/* F5 */}
+        {f5s.length>0&&(
+        <div className="tr-split-tile">
+          <div className="tr-split-label">F5 O/U</div>
+          <div className="tr-split-record">{f5.w}-{f5.l}</div>
+          <div className="tr-split-rate">{fmtRate(f5.w,f5.l)}</div>
+          <div className={'tr-split-profit '+(f5.profit>=0?'pos':'neg')}>{fmtSign(f5.profit)}u</div>
+          <SubBreakdown rows={[...f5Over.map(r=>({...r,lean:'OVER'})),...f5Under.map(r=>({...r,lean:'UNDER'}))]} />
+        </div>
+        )}
+
+        {/* Moneyline */}
         {mls.length>0&&(
         <div className="tr-split-tile">
           <div className="tr-split-label">Moneyline</div>
-          <div className="tr-split-record">{mlW}-{mlL}</div>
-          <div className="tr-split-rate">{fmtRate(mlW,mlL)}</div>
-          <div className={'tr-split-profit '+(mlProfit>=0?'pos':'neg')}>{fmtSign(mlProfit)}u</div>
+          <div className="tr-split-record">{ml.w}-{ml.l}</div>
+          <div className="tr-split-rate">{fmtRate(ml.w,ml.l)}</div>
+          <div className={'tr-split-profit '+(ml.profit>=0?'pos':'neg')}>{fmtSign(ml.profit)}u</div>
         </div>
         )}
+
+        {/* Pitcher Props */}
         <div className="tr-split-tile">
           <div className="tr-split-label">Pitcher Props</div>
-          <div className="tr-split-record">{prpW}-{prpL}</div>
-          <div className="tr-split-rate">{fmtRate(prpW,prpL)}</div>
-          <div className={'tr-split-profit '+(prpProfit>=0?'pos':'neg')}>{fmtSign(prpProfit)}u</div>
+          <div className="tr-split-record">{prp.w}-{prp.l}</div>
+          <div className="tr-split-rate">{fmtRate(prp.w,prp.l)}</div>
+          <div className="tr-split-profit" style={{color:'var(--ink-3)',fontSize:'10px'}}>—</div>
         </div>
       </div>
+
       {props.length>0&&(
         <div className="tr-prop-breakdown">
-          {props.map(r=>(
-            <div key={r.category} className="tr-prop-tile">
-              <div className="tr-prop-cat">{r.category}</div>
-              <div className="tr-prop-record">{r.wins}-{r.losses}</div>
-              <div className={'tr-prop-profit '+(r.profit_units>=0?'pos':'neg')}>{fmtSign(r.profit_units)}u</div>
-            </div>
-          ))}
+          {[...new Set(props.map(r=>r.category))].map(cat=>{
+            const catRows = props.filter(r=>r.category===cat);
+            const cw=catRows.reduce((s,r)=>s+(r.wins||0),0);
+            const cl=catRows.reduce((s,r)=>s+(r.losses||0),0);
+            return (
+              <div key={cat} className="tr-prop-tile">
+                <div className="tr-prop-cat">{cat}</div>
+                <div className="tr-prop-record">{cw}-{cl}</div>
+                <div className="tr-prop-profit" style={{color:'var(--ink-3)',fontSize:'10px'}}>—</div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -652,6 +711,12 @@ function DayCard({ day }) {
   const totL      = totalBuckets.reduce((s,b)=>s+(b.losses||0),0);
   const totP      = totalBuckets.reduce((s,b)=>s+(b.pushes||0),0);
   const totProfit = totalBuckets.reduce((s,b)=>s+(b.profit_units||0),0);
+
+  const f5Buckets  = buckets.filter(b=>b.kind==='f5');
+  const f5W       = f5Buckets.reduce((s,b)=>s+(b.wins||0),0);
+  const f5L       = f5Buckets.reduce((s,b)=>s+(b.losses||0),0);
+  const f5P       = f5Buckets.reduce((s,b)=>s+(b.pushes||0),0);
+  const f5Profit  = f5Buckets.reduce((s,b)=>s+(b.profit_units||0),0);
 
   const mlBuckets  = buckets.filter(b=>b.kind==='ml');
   const mlW       = mlBuckets.reduce((s,b)=>s+(b.wins||0),0);

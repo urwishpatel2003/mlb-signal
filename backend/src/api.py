@@ -443,8 +443,8 @@ def performance_overall():
         FROM edge_results er
         JOIN edges e ON e.edge_id = er.edge_id
         WHERE e.flagged = TRUE
-        GROUP BY e.kind, e.category
-        ORDER BY e.kind, e.category
+        GROUP BY e.kind, e.category, e.lean
+        ORDER BY e.kind, e.category, e.lean
     """)
 
     overall = {"wins": 0, "losses": 0, "pushes": 0, "profit_units": 0.0}
@@ -460,6 +460,7 @@ def performance_overall():
         overall["profit_units"] = round(overall["profit_units"] + profit, 2)
         by_category.append({
             "kind": r["kind"],
+            "lean": r["lean"],
             "category": r["category"],
             "wins": wins,
             "losses": losses,
