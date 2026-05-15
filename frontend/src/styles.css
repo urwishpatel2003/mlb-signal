@@ -1541,3 +1541,31 @@ html, body {
     font-size: 20px !important;
   }
 }
+
+/* ============================================================
+   Edge row mobile fix - force correct card layout on phones
+   ============================================================ */
+@media (max-width: 640px) {
+  .edges-thead { display: none !important; }
+  .edge-row {
+    display: grid !important;
+    grid-template-columns: 1fr auto !important;
+    grid-template-rows: auto auto auto !important;
+    grid-template-areas:
+      'subject conv'
+      'market  pick'
+      'line    proj' !important;
+    gap: 4px 10px !important;
+    padding: 12px !important;
+    align-items: start !important;
+  }
+  .cell-subject   { grid-area: subject !important; min-width: 0; }
+  .cell-market    { grid-area: market  !important; font-size: 10px; color: var(--ink-3); }
+  .cell-num:not(.cell-proj) { grid-area: line !important; }
+  .cell-num.cell-proj { grid-area: proj !important; text-align: right; font-weight: 700; }
+  .cell-pick      { grid-area: pick    !important; text-align: right; }
+  .cell-conviction{ grid-area: conv    !important; text-align: right; }
+  .subject-main   { font-size: 14px !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .subject-sub    { font-size: 9px !important; }
+  .pick-odds      { font-size: 9px !important; }
+}
