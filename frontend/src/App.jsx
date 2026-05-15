@@ -745,8 +745,13 @@ function DayCard({ day }) {
       {open&&(
         <div className="day-body">
           {totalBuckets.length>0&&(
-            <GroupBlock label="Game Totals" wins={totW} losses={totL} pushes={totP} profit={totProfit}>
+            <GroupBlock label="Full Game O/U" wins={totW} losses={totL} pushes={totP} profit={totProfit}>
               {totalBuckets.map((b,i)=><BucketBlock key={i} bucket={b}/>)}
+            </GroupBlock>
+          )}
+          {f5Buckets.length>0&&(
+            <GroupBlock label="F5 O/U" wins={f5W} losses={f5L} pushes={f5P} profit={f5Profit}>
+              {f5Buckets.map((b,i)=><BucketBlock key={i} bucket={b}/>)}
             </GroupBlock>
           )}
           {mlBuckets.length>0&&(
