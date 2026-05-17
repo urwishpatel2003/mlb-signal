@@ -324,6 +324,24 @@ def get_box_score(game_pk: int) -> dict:
     return _request(f"/api/v1.1/game/{game_pk}/feed/live")
 
 
+def get_linescore(game_pk: int) -> dict:
+    """
+    Fetch the standalone linescore for a finished game.
+
+    Used by the nightly grader to extract per-inning runs (F5 grading).
+    The v1.1 live feed's linescore.innings has empty inning objects;
+    this v1 endpoint actually contains away.runs / home.runs per inning.
+
+    Returns shape:
+      {
+        "innings": [{"num": 1, "home": {"runs": N, ...}, "away": {"runs": N, ...}}, ...],
+        "teams": {"home": {"runs": N, ...}, "away": {"runs": N, ...}},
+        ...
+      }
+    """
+    return _request(f"/api/v1/game/{game_pk}/linescore")
+
+
 def extract_pitcher_lines(box_payload: dict) -> dict[int, dict]:
     """
     From a live feed payload, pull each pitcher's final line by mlb_id.

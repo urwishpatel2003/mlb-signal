@@ -1,9 +1,14 @@
 """
-Nightly grader — v4.2
+Nightly grader — v4.3
+
+Changes vs v4.2:
+  - grade_box_score: F5 runs now fetched from /api/v1/game/{pk}/linescore
+    (standalone endpoint) instead of the v1.1 live feed, which returns
+    empty inning objects. Fixes silent F5 NULL bug.
 
 Changes vs v4.1:
-  - grade_box_score: extracts F5 (first 5 innings) runs from linescore.innings
-    and persists away_f5_runs/home_f5_runs on games. Requires migration 0006.
+  - grade_box_score: extracts F5 (first 5 innings) runs and persists
+    away_f5_runs/home_f5_runs on games. Requires migration 0006.
   - actual_value_for_edge: F5 branch now returns realized F5 total instead of None.
   - grade_yesterday: JOIN query includes f5 columns so F5 edges can be graded.
 
@@ -41,26 +46,32 @@ def grade_box_score(game_pk: int) -> dict:
             (away_runs, home_runs, game_pk),
         )
 
-    # F5 (first 5 innings) — walk linescore.innings[:5] for F5 total grading.
-    # Only persist if the game actually reached the bottom of the 5th; otherwise
-    # leave NULL so F5 edges on rain-shortened games stay ungraded (safer than
-    # booking a partial-inning result as a loss).
-    innings = linescore.get("innings") or []
-    if len(innings) >= 5:
-        try:
+    # F5 (first 5 innings) — fetch the standalone linescore endpoint, which
+    # actually contains per-inning runs (the v1.1 live feed has them empty).
+    # Only persist if the game reached the bottom of the 5th; otherwise leave
+    # NULL so F5 edges on rain-shortened games stay ungraded.
+    try:
+        ls = mlb_api.get_linescore(game_pk)
+        innings = ls.get("innings") or []
+        if len(innings) >= 5:
             away_f5 = sum(int((inn.get("away") or {}).get("runs") or 0) for inn in innings[:5])
             home_f5 = sum(int((inn.get("home") or {}).get("runs") or 0) for inn in innings[:5])
             # Confirm bottom of 5th was actually played — if home was already
-            # ahead and didn't bat, MLB still includes innings[4] but home.runs
-            # may be missing entirely (key absent). Treat that as incomplete.
+            # ahead and didn't bat, home.runs key is missing on innings[4].
             home5 = (innings[4].get("home") or {})
-            if "runs" in home5 or away_f5 > sum(int((inn.get("home") or {}).get("runs") or 0) for inn in innings[:4]):
+            home_runs_through_4 = sum(int((inn.get("home") or {}).get("runs") or 0) for inn in innings[:4])
+            if "runs" in home5 or away_f5 > home_runs_through_4:
                 db.execute(
                     "UPDATE games SET away_f5_runs=%s, home_f5_runs=%s WHERE game_pk=%s",
                     (away_f5, home_f5, game_pk),
                 )
-        except (ValueError, TypeError, IndexError) as exc:
-            log.warning("F5 inning parse failed for game %s: %s", game_pk, exc)
+                log.info("F5 runs written for game %s: away=%s home=%s", game_pk, away_f5, home_f5)
+            else:
+                log.info("F5 not persisted for game %s (bottom of 5th not played)", game_pk)
+        else:
+            log.info("F5 not persisted for game %s (only %d innings)", game_pk, len(innings))
+    except Exception as exc:
+        log.warning("F5 linescore fetch/parse failed for game %s: %s", game_pk, exc)
 
     rows = []
     for mlb_id, line in lines.items():
