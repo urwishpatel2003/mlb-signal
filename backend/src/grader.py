@@ -1,5 +1,11 @@
 """
-Nightly grader — v4.1
+Nightly grader — v4.2
+
+Changes vs v4.1:
+  - grade_box_score: extracts F5 (first 5 innings) runs from linescore.innings
+    and persists away_f5_runs/home_f5_runs on games. Requires migration 0006.
+  - actual_value_for_edge: F5 branch now returns realized F5 total instead of None.
+  - grade_yesterday: JOIN query includes f5 columns so F5 edges can be graded.
 
 Changes vs v4.0:
   - grade_edge: uses actual over_price/under_price stored on the edge
@@ -34,6 +40,27 @@ def grade_box_score(game_pk: int) -> dict:
             "UPDATE games SET away_score=%s, home_score=%s, status='Final', refreshed_at=now() WHERE game_pk=%s",
             (away_runs, home_runs, game_pk),
         )
+
+    # F5 (first 5 innings) — walk linescore.innings[:5] for F5 total grading.
+    # Only persist if the game actually reached the bottom of the 5th; otherwise
+    # leave NULL so F5 edges on rain-shortened games stay ungraded (safer than
+    # booking a partial-inning result as a loss).
+    innings = linescore.get("innings") or []
+    if len(innings) >= 5:
+        try:
+            away_f5 = sum(int((inn.get("away") or {}).get("runs") or 0) for inn in innings[:5])
+            home_f5 = sum(int((inn.get("home") or {}).get("runs") or 0) for inn in innings[:5])
+            # Confirm bottom of 5th was actually played — if home was already
+            # ahead and didn't bat, MLB still includes innings[4] but home.runs
+            # may be missing entirely (key absent). Treat that as incomplete.
+            home5 = (innings[4].get("home") or {})
+            if "runs" in home5 or away_f5 > sum(int((inn.get("home") or {}).get("runs") or 0) for inn in innings[:4]):
+                db.execute(
+                    "UPDATE games SET away_f5_runs=%s, home_f5_runs=%s WHERE game_pk=%s",
+                    (away_f5, home_f5, game_pk),
+                )
+        except (ValueError, TypeError, IndexError) as exc:
+            log.warning("F5 inning parse failed for game %s: %s", game_pk, exc)
 
     rows = []
     for mlb_id, line in lines.items():
@@ -75,9 +102,11 @@ def actual_value_for_edge(e: dict, game_row: dict) -> Optional[float]:
         return float(ar + hr)
 
     if kind == "f5":
-        # F5 grading: need inning-by-inning data — not yet stored.
-        # Skip for now; will add when we pull play-by-play.
-        return None
+        af5 = game_row.get("away_f5_runs")
+        hf5 = game_row.get("home_f5_runs")
+        if af5 is None or hf5 is None:
+            return None
+        return float(af5 + hf5)
 
     if kind == "ml":
         # ML grading: home win = home_score > away_score
@@ -195,7 +224,8 @@ def grade_yesterday(target_date: Optional[date] = None) -> dict:
         edges = db.fetchall(
             """
             SELECT DISTINCT ON (e.game_pk, e.kind, e.category, COALESCE(e.pitcher_mlb_id,0))
-                   e.*, g.away_score, g.home_score, g.status
+                   e.*, g.away_score, g.home_score,
+                   g.away_f5_runs, g.home_f5_runs, g.status
             FROM edges e
             JOIN games g ON g.game_pk = e.game_pk
             JOIN projection_runs pr ON pr.run_id = e.run_id
