@@ -5,7 +5,7 @@ from dataclasses import asdict
 from datetime import date, datetime, timezone, timedelta
 from typing import Optional
 
-from . import db, mlb_api, projections, ntfy, odds_props
+from . import db, mlb_api, projections, ntfy, odds_props, reasoning
 from .odds import attach_odds_to_games
 from .weather import enrich_weather_for_game
 from .park_factors import get_park_for_team
@@ -291,10 +291,39 @@ def run(trigger="manual"):
             # Dedup totals: keep larger of full-game vs F5 when leaning same direction.
             # Different leans -> keep both. All edges remain 1 unit.
             game_edges = dedupe_totals_per_game(game_edges)
+            # Build reasoning context shared across edges from this game
+            _reason_ctx_base = {
+                "away_proj": away_proj, "home_proj": home_proj,
+                "park": park, "weather": weather,
+                "away_team_xstats": all_team.get(g.away_team),
+                "home_team_xstats": all_team.get(g.home_team),
+                "market_total": market_total, "proj_total": full_total,
+                "proj_f5": f5_total,
+                "home_win_prob": home_win_prob, "away_win_prob": away_win_prob,
+            }
             for e in game_edges:
                 pft=(away_proj if e.get("pitcher_mlb_id")==(away_proj.pitcher_mlb_id if away_proj else None)
                      else (home_proj if e.get("pitcher_mlb_id")==(home_proj.pitcher_mlb_id if home_proj else None) else None))
                 e["confidence_tier"]=confidence_tier(e,pft)
+                # Attach reasoning
+                try:
+                    if e["kind"] == "total":
+                        short, factors = reasoning.reason_for_total(e, _reason_ctx_base)
+                    elif e["kind"] == "f5":
+                        short, factors = reasoning.reason_for_f5(e, _reason_ctx_base)
+                    elif e["kind"] == "ml":
+                        short, factors = reasoning.reason_for_ml(e, _reason_ctx_base)
+                    elif e["kind"] == "prop":
+                        short, factors = reasoning.reason_for_prop(
+                            e, {**_reason_ctx_base, "pitcher_proj": pft})
+                    else:
+                        short, factors = None, None
+                    e["reason_short"] = short
+                    e["reason_factors"] = factors
+                except Exception as _re:
+                    log.warning("Reasoning failed for edge %s: %s", e.get("kind"), _re)
+                    e["reason_short"] = None
+                    e["reason_factors"] = None
                 db.insert_edge(run_id,e); all_edges.append(e)
         all_edges.sort(key=lambda x:abs(x["edge"]),reverse=True)
         metrics.update({"n_edges":len(all_edges),
