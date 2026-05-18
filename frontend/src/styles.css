@@ -1569,3 +1569,92 @@ html, body {
   .subject-sub    { font-size: 9px !important; }
   .pick-odds      { font-size: 9px !important; }
 }
+
+
+/* ============================================================================
+   Edge reasoning — short inline summary + expandable factor table
+   ============================================================================ */
+.reason-short {
+  font-size: 11px;
+  color: var(--ink-3, #6b6b6b);
+  margin-top: 4px;
+  line-height: 1.35;
+  font-style: italic;
+}
+
+.reason-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0;
+  border: 1px solid var(--ink-4, #d0d0d0);
+  background: transparent;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--ink-2, #444);
+  vertical-align: middle;
+}
+.reason-toggle:hover {
+  background: var(--bg-hover, #f5f5f5);
+  border-color: var(--ink-3, #999);
+}
+.reason-toggle.open {
+  background: var(--ink-2, #444);
+  color: white;
+  border-color: var(--ink-2, #444);
+}
+
+.reason-detail {
+  padding: 10px 16px 14px;
+  background: var(--bg-subtle, #fafafa);
+  border-bottom: 1px solid var(--ink-5, #ececec);
+  font-size: 12px;
+}
+.reason-factors {
+  width: 100%;
+  border-collapse: collapse;
+}
+.reason-factors thead th {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-3, #888);
+  font-weight: 600;
+  text-align: left;
+  padding: 4px 8px 6px;
+  border-bottom: 1px solid var(--ink-5, #ececec);
+}
+.reason-factors thead th.impact { text-align: right; }
+.reason-factors tbody td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--ink-6, #f3f3f3);
+}
+.reason-factors tbody tr:last-child td { border-bottom: none; }
+.factor-label {
+  font-weight: 600;
+  color: var(--ink-1, #222);
+  width: 160px;
+  white-space: nowrap;
+}
+.factor-value {
+  color: var(--ink-2, #555);
+}
+.factor-impact {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+  width: 110px;
+}
+.impact-pos { color: var(--moss, #2e7d32); }
+.impact-neg { color: var(--vermillion, #c62828); }
+.impact-neutral { color: var(--ink-3, #888); }
+
+/* Make conviction cell flex so the toggle sits next to the value */
+.cell-conviction { display: flex; align-items: center; gap: 6px; }

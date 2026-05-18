@@ -186,7 +186,54 @@ function EdgesView({ edges, kind }) {
 
 function fmtOddsVal(o){ if(o==null)return null; return o>0?'+'+o:String(o); }
 
+
+// ============================================================================
+// Reason detail — small expandable block under any edge row
+// ============================================================================
+function ReasonDetail({ factors }) {
+  if (!factors || factors.length === 0) return null;
+  return (
+    <div className="reason-detail">
+      <table className="reason-factors">
+        <thead>
+          <tr><th>Factor</th><th>Value</th><th className="impact">Impact</th></tr>
+        </thead>
+        <tbody>
+          {factors.map((f, i) => {
+            const cls = f.impact && f.impact.startsWith('+') ? 'impact-pos'
+                      : f.impact && f.impact.startsWith('-') ? 'impact-neg'
+                      : 'impact-neutral';
+            return (
+              <tr key={i}>
+                <td className="factor-label">{f.label}</td>
+                <td className="factor-value">{f.value}</td>
+                <td className={'factor-impact ' + cls}>{f.impact}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ReasonToggle({ open, onClick, hasFactors }) {
+  if (!hasFactors) return null;
+  return (
+    <button
+      type="button"
+      className={'reason-toggle' + (open ? ' open' : '')}
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      title={open ? 'Hide reasoning' : 'Show reasoning'}
+      aria-label="Toggle reasoning"
+    >
+      {open ? '−' : '+'}
+    </button>
+  );
+}
+
 function EdgeRow({ edge }) {
+  const [open, setOpen] = useState(false);
   const isProp   = edge.kind==='prop';
   const subject  = isProp ? edge.pitcher_name?.split(',')[0]??'-' : `${edge.team_code??'?'} @ ${edge.opp_team_code??'?'}`;
   const subjectSub = isProp ? `${edge.team_code??''} v ${edge.opp_team_code??''}` : null;
@@ -195,11 +242,14 @@ function EdgeRow({ edge }) {
   let convBarClass = 'conv-bar';
   if (conv!=null){ if(conv>=75)convBarClass+=' conv-strong'; else if(conv>=60)convBarClass+=' conv-medium'; else convBarClass+=' conv-weak'; }
   const relevantOdds = edge.lean==='OVER' ? fmtOddsVal(edge.over_price) : fmtOddsVal(edge.under_price);
+  const hasFactors = !!(edge.reason_factors && edge.reason_factors.length);
   return (
+    <>
     <div className="edge-row">
       <div className="cell-subject">
         <div className="subject-main">{subject}</div>
         {subjectSub && <div className="subject-sub">{subjectSub}</div>}
+        {edge.reason_short && <div className="reason-short">{edge.reason_short}</div>}
       </div>
       <div className="cell-market">{MARKET_LABELS[edge.category]||edge.category}</div>
       <div className="cell-num">{Number(edge.line).toFixed(1)}</div>
@@ -215,8 +265,11 @@ function EdgeRow({ edge }) {
               <span className="conv-value">{Number(conv).toFixed(0)}%</span>
               <div className={convBarClass}><div className="conv-bar-fill" style={{width:`${Math.min(100,Math.max(0,conv))}%`}}/></div>
             </div>}
+        <ReasonToggle open={open} onClick={()=>setOpen(!open)} hasFactors={hasFactors} />
       </div>
     </div>
+    {open && hasFactors && <ReasonDetail factors={edge.reason_factors} />}
+    </>
   );
 }
 
@@ -249,13 +302,17 @@ function F5View({ edges, games }) {
 }
 
 function F5Row({ edge }) {
+  const [open, setOpen] = useState(false);
   const conv=edge.conviction_pct, tier=edge.confidence_tier??3;
   const relevantOdds = edge.lean==='OVER' ? fmtOddsVal(edge.over_price) : fmtOddsVal(edge.under_price);
+  const hasFactors = !!(edge.reason_factors && edge.reason_factors.length);
   return (
+    <>
     <div className="edge-row f5-row">
       <div className="cell-subject">
         <div className="subject-main">{edge.team_code} @ {edge.opp_team_code}</div>
         <div className="subject-sub">First 5 Innings</div>
+        {edge.reason_short && <div className="reason-short">{edge.reason_short}</div>}
       </div>
       <div className="cell-num">{Number(edge.line).toFixed(1)}</div>
       <div className={`cell-pick lean-${edge.lean}`}>
@@ -270,8 +327,11 @@ function F5Row({ edge }) {
         {conv!=null
           ? <span className="conv-value">{Number(conv).toFixed(0)}% <span className="tier-pill">T{tier}</span></span>
           : <span className="conv-na">n/a</span>}
+        <ReasonToggle open={open} onClick={()=>setOpen(!open)} hasFactors={hasFactors} />
       </div>
     </div>
+    {open && hasFactors && <ReasonDetail factors={edge.reason_factors} />}
+    </>
   );
 }
 
@@ -305,19 +365,22 @@ function MoneylineView({ edges, games }) {
 }
 
 function MLRow({ edge }) {
+  const [open, setOpen] = useState(false);
   const tier = edge.confidence_tier??3;
   const edgePp = edge.ml_edge_pct!=null ? (edge.ml_edge_pct*100).toFixed(1) : edge.edge?.toFixed(1);
   const modelPct = edge.proj_value!=null ? Number(edge.proj_value).toFixed(1)+'%' : '-';
   const impliedPct = edge.ml_edge_pct!=null && edge.proj_value!=null
     ? (Number(edge.proj_value) - Number(edge.ml_edge_pct)*100).toFixed(1)+'%' : '-';
   const isPos = (edge.ml_edge_pct??0)>0;
-  // ML odds: line IS the American odds for the lean team
   const mlOdds = fmtOddsVal(edge.line);
+  const hasFactors = !!(edge.reason_factors && edge.reason_factors.length);
   return (
+    <>
     <div className="ml-row">
       <div className="cell-subject">
         <div className="subject-main">{edge.team_code} @ {edge.opp_team_code}</div>
         <div className="subject-sub">{edge.notes||''}</div>
+        {edge.reason_short && <div className="reason-short">{edge.reason_short}</div>}
       </div>
       <div className={`cell-pick lean-${isPos?'OVER':'UNDER'}`} style={{fontFamily:'var(--display)',fontWeight:700}}>
         {edge.lean}
@@ -329,8 +392,13 @@ function MLRow({ edge }) {
       <div className="cell-num" style={{fontWeight:700,color:isPos?'var(--moss)':'var(--vermillion)'}}>
         {isPos?'+':''}{edgePp}pp
       </div>
-      <div><span className="tier-pill">T{tier}</span></div>
+      <div>
+        <span className="tier-pill">T{tier}</span>
+        <ReasonToggle open={open} onClick={()=>setOpen(!open)} hasFactors={hasFactors} />
+      </div>
     </div>
+    {open && hasFactors && <ReasonDetail factors={edge.reason_factors} />}
+    </>
   );
 }
 
