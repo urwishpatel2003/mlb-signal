@@ -173,6 +173,7 @@ function EdgesView({ edges, kind }) {
           <span>{kind==='game'?'Matchup':'Pitcher'}</span>
           <span>Market</span><span className="num">Line</span>
           <span>Pick</span><span className="num">Projection</span><span>Conviction</span>
+          <span className="th-reason"></span>
         </div>
         <div className="edges-tbody">
           {displayed.length===0
@@ -292,6 +293,7 @@ function F5View({ edges, games }) {
           <span>Matchup</span><span className="num">F5 Line</span>
           <span>Pick</span><span className="num">F5 Proj</span>
           <span className="num">Edge</span><span>Conviction</span>
+          <span className="th-reason"></span>
         </div>
         <div className="edges-tbody">
           {sorted.map((e,i) => <F5Row key={e.edge_id||i} edge={e} />)}
@@ -354,6 +356,7 @@ function MoneylineView({ edges, games }) {
           <span>Matchup</span><span>Pick</span><span className="num">Odds</span>
           <span className="num">Model Win%</span><span className="num">Implied</span>
           <span className="num">Edge</span><span>Tier</span>
+          <span className="th-reason"></span>
         </div>
         <div className="ml-tbody">
           {sorted.map((e,i) => <MLRow key={e.edge_id||i} edge={e} />)}

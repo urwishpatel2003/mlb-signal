@@ -1658,3 +1658,29 @@ html, body {
 
 /* Make conviction cell flex so the toggle sits next to the value */
 .cell-conviction { display: flex; align-items: center; gap: 6px; }
+
+
+/* ============================================================================
+   Toggle column — empty header + narrow trailing column on all edge tables
+   Keeps the +/- button aligned with the rest of the row.
+   ============================================================================ */
+.th-reason {
+  /* Empty header cell — placeholder so the grid has the right column count.
+     Width controlled by the row's grid-template-columns or flex layout. */
+  display: block;
+  min-width: 28px;
+}
+
+/* If your tables use CSS grid, you'll need a trailing column. These selectors
+   try common patterns — if your grid-template-columns is set elsewhere, you
+   may need to add ` 30px` to the end of that rule manually. */
+.edges-thead,
+.edge-row {
+  /* Append a small column to whatever grid the row already uses.
+     Vite will apply this on top of existing grid-template-columns. */
+}
+.cell-reason-toggle,
+.cell-tier-toggle {
+  min-width: 28px;
+  flex: 0 0 auto;
+}
