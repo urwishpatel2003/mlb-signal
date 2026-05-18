@@ -1,4 +1,4 @@
-"""Daily orchestrator v4.1 — prop prices stored on edges for correct grading."""
+"""Daily orchestrator v4.1 â€” prop prices stored on edges for correct grading."""
 from __future__ import annotations
 import argparse, logging, math, traceback
 from dataclasses import asdict
@@ -60,6 +60,29 @@ def confidence_tier(edge,proj=None):
         ep=abs(edge.get("ml_edge_pct") or 0); return 1 if ep>=0.08 else (2 if ep>=0.05 else 3)
     return 1 if ae>=2.0 else (2 if ae>=1.0 else 3)
 
+def dedupe_totals_per_game(edges_for_game: list[dict]) -> list[dict]:
+    """
+    For totals only: collapse the full-game total + F5 total down to one edge
+    when they lean the same direction. Larger |edge| wins.
+
+    Conflict case (different leans) -> keep both.
+    ML, prop, and any non-total edges pass through unchanged.
+    """
+    total_edge = next((e for e in edges_for_game if e.get("kind") == "total"), None)
+    f5_edge    = next((e for e in edges_for_game if e.get("kind") == "f5"), None)
+
+    if not total_edge or not f5_edge:
+        return edges_for_game
+
+    if total_edge.get("lean") != f5_edge.get("lean"):
+        return edges_for_game
+
+    keep = total_edge if abs(total_edge["edge"]) >= abs(f5_edge["edge"]) else f5_edge
+    drop = f5_edge    if keep is total_edge else total_edge
+    drop_id = id(drop)
+    return [e for e in edges_for_game if id(e) != drop_id]
+
+
 def compute_edges_for_game(*,game_pk,game,away_proj,home_proj,
     market_total,market_f5_total,away_ml,home_ml,
     full_total,f5_total,home_runs,away_runs,home_win_prob,away_win_prob,
@@ -95,7 +118,7 @@ def compute_edges_for_game(*,game_pk,game,away_proj,home_proj,
     if away_ml and home_ml and projections.ml_edge_reliable(away_proj,home_proj):
         ai,hi=remove_vig(american_to_implied(away_ml),american_to_implied(home_ml))
         hep=home_win_prob-hi; aep=away_win_prob-ai
-        # Higher threshold for big underdogs (+150 or longer) � noisy projections
+        # Higher threshold for big underdogs (+150 or longer) — noisy projections
         def ml_threshold(odds): return 0.50 if odds is not None and odds >= 150 else EDGE_THRESHOLDS["ML"]
         if hep > 0 and hep>=ml_threshold(home_ml) and hep>=aep:
             ml_lean,ml_odds,wp,ep,oi=game.get("home_team"),home_ml,home_win_prob,hep,hi
@@ -125,11 +148,11 @@ def compute_edges_for_game(*,game_pk,game,away_proj,home_proj,
             if abs(diff)<EDGE_THRESHOLDS.get(category,0.5): continue
             lean="OVER" if diff>0 else "UNDER"
             # ER props: use Poisson probability as primary gate (not raw edge size)
-            # Single-game ER is high variance � need >60% probability to fire
+            # Single-game ER is high variance — need >60% probability to fire
             if category == "ER":
                 conviction = poisson_tail_prob(proj_val, float(line), lean)
                 if conviction < 0.60: continue
-                # Override the raw edge threshold for ER � Poisson gate is sufficient
+                # Override the raw edge threshold for ER — Poisson gate is sufficient
                 diff = proj_val - float(line)  # recalc to ensure correct sign
             over_price =prop_data.get("over_price")  if isinstance(prop_data,dict) else None
             under_price=prop_data.get("under_price") if isinstance(prop_data,dict) else None
@@ -265,18 +288,10 @@ def run(trigger="manual"):
                 home_win_prob=home_win_prob,away_win_prob=away_win_prob,
                 game_row=game_row,away_team_xstats=all_team.get(g.away_team),
                 home_team_xstats=all_team.get(g.home_team))
-            # Correlated edges: F5 + Full Game same direction -> 0.5u each
-            _total_e = [e for e in game_edges if e["kind"]=="total"]
-            _f5_e    = [e for e in game_edges if e["kind"]=="f5"]
-            for _te in _total_e:
-                for _fe in _f5_e:
-                    if _te["lean"] == _fe["lean"]:
-                        _te["stake_units"] = 0.5
-                        _fe["stake_units"] = 0.5
-                        log.info("Correlated F5+Full: %s @ %s %s -> 0.5u each",
-                                 _te["team_code"], _te["opp_team_code"], _te["lean"])
+            # Dedup totals: keep larger of full-game vs F5 when leaning same direction.
+            # Different leans -> keep both. All edges remain 1 unit.
+            game_edges = dedupe_totals_per_game(game_edges)
             for e in game_edges:
-                e.setdefault("stake_units", 1.0)
                 pft=(away_proj if e.get("pitcher_mlb_id")==(away_proj.pitcher_mlb_id if away_proj else None)
                      else (home_proj if e.get("pitcher_mlb_id")==(home_proj.pitcher_mlb_id if home_proj else None) else None))
                 e["confidence_tier"]=confidence_tier(e,pft)
