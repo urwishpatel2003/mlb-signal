@@ -287,11 +287,16 @@ def _compute_team_bullpen_er9(team_xstats_row, league_avg_er9=4.0) -> float:
     season_weight = bp_ip / (bp_ip + 50.0)
     season_er9 = season_weight * season_true + (1 - season_weight) * league_avg_er9
 
-    # Improvement #3: blend in L7 when available
+    # Improvement #3 (DISABLED 2026-05-17): L7 blend caused systematic
+    # ~1.5 run projection drift. SD bullpen showed 0.39 ERA over L7, which
+    # at 40% weight collapsed bullpen ER9 projections far below realistic
+    # values across the slate. Reverting to season-only ER9 with Bayesian
+    # shrinkage. Re-enable after redesigning L7 weight + shrinkage.
+    _L7_BLEND_ENABLED = False
     l7_era = team_xstats_row.get("bullpen_era_l7")
     l7_ip  = float(team_xstats_row.get("bullpen_ip_l7") or 0)
-    if l7_era is not None and l7_ip >= 10:
-        l7_weight = min(0.40, l7_ip / 40.0)   # max 40% weight at 40+ IP in 7 days
+    if _L7_BLEND_ENABLED and l7_era is not None and l7_ip >= 10:
+        l7_weight = min(0.40, l7_ip / 40.0)
         return round(l7_weight * float(l7_era) + (1 - l7_weight) * season_er9, 3)
 
     return round(season_er9, 3)
