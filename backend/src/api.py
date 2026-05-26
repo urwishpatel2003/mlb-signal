@@ -1155,21 +1155,44 @@ def zero_prop_units(token: str):
 # ============================================================================
 @app.get("/api/stats/pitchers")
 def stats_pitchers():
-    """All pitchers with Statcast data for the current season."""
+    """All pitchers with Statcast data + contact metrics + splits."""
     from . import db
     from datetime import date as _date
     season = _date.today().year
+
     rows = db.fetchall("""
         SELECT mlb_id, last_first, season_year,
                pa, bip, ba, est_ba, slg, est_slg, woba, est_woba,
                era, xera, xfip, k_pct, bb9, fb_pct, hr_fb_rate,
+               babip, gb_pct, ld_pct,
+               avg_exit_velo, hard_hit_pct, barrel_pct, launch_angle_avg,
                days_rest, last_start_date::text AS last_start_date,
                refreshed_at::text AS refreshed_at
         FROM pitcher_xstats
         WHERE season_year = %s
         ORDER BY pa DESC NULLS LAST, est_woba ASC NULLS LAST
     """, (season,))
-    return {"season": season, "n": len(rows), "pitchers": [dict(r) for r in rows]}
+
+    # Tack on splits keyed by mlb_id -> {vsL: {...}, vsR: {...}, home: {...}, away: {...}}
+    split_rows = db.fetchall("""
+        SELECT mlb_id, split_key, pa, ip, era, whip,
+               avg_against, obp_against, slg_against, ops_against, k_pct, bb_pct
+        FROM pitcher_pitching_splits
+        WHERE season_year = %s
+    """, (season,))
+    splits_by_id = {}
+    for sr in split_rows:
+        d = splits_by_id.setdefault(sr["mlb_id"], {})
+        key = sr["split_key"]
+        d[key] = {k: v for k, v in dict(sr).items() if k not in ("mlb_id", "split_key")}
+
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["splits"] = splits_by_id.get(r["mlb_id"], {})
+        out.append(d)
+
+    return {"season": season, "n": len(out), "pitchers": out}
 
 
 @app.get("/api/stats/hitters")

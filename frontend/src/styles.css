@@ -1899,3 +1899,75 @@ html, body {
 }
 .admin-job-status.admin-state-success { border-left-color: #5b8e52; }
 .admin-job-status.admin-state-error   { border-left-color: #b8483a; color: #7a2418; }
+
+
+/* ============================================================================
+   Pitcher splits panel — inline expandable under any pitcher row
+   ============================================================================ */
+.splits-toggle {
+  font-family: var(--mono, monospace);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 4px 10px;
+  background: transparent;
+  color: var(--ink-2, #555);
+  border: 1px solid var(--rule, #c8c8c8);
+  cursor: pointer;
+}
+.splits-toggle:hover {
+  background: var(--paper-2, #f5f0e0);
+  color: var(--ink, #111);
+}
+.splits-toggle.open {
+  background: var(--ink, #111);
+  color: var(--paper, #fff);
+  border-color: var(--ink, #111);
+}
+.splits-na {
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  color: var(--ink-3, #999);
+}
+
+.splits-panel {
+  grid-column: 1 / -1;
+  background: var(--paper-2, #faf6ec);
+  border-top: 1px solid var(--rule, #d8d0bf);
+  border-bottom: 1px solid var(--rule, #d8d0bf);
+  padding: 10px 16px;
+  margin-top: 4px;
+}
+.splits-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+}
+.splits-table thead th {
+  text-align: left;
+  padding: 4px 8px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3, #888);
+  font-weight: 700;
+  border-bottom: 1px solid var(--rule, #d8d0bf);
+}
+.splits-table thead th.num { text-align: right; }
+.splits-table tbody td {
+  padding: 6px 8px;
+  color: var(--ink, #111);
+  border-bottom: 1px solid var(--rule, #efe8d7);
+}
+.splits-table tbody td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.splits-table tbody tr:last-child td { border-bottom: none; }
+.splits-table tbody td:first-child {
+  font-family: var(--text, system-ui);
+  font-weight: 600;
+  color: var(--ink-1, #222);
+}

@@ -964,10 +964,11 @@ function StatsTable({ rows, columns, defaultSort, defaultDir='desc', initialSear
               <div key={r.mlb_id || r.team_code || i} className="stats-row" style={{gridTemplateColumns: gridTemplate}}>
                 {columns.map(col => {
                   const val = r[col.key];
-                  const display = val == null ? '—'
-                    : col.fmt ? col.fmt(val)
-                    : col.type === 'number' ? Number(val).toFixed(col.dp ?? 2)
-                    : val;
+                  const display = (col.fmt
+                    ? col.fmt(val, r)
+                    : (val == null ? '—'
+                      : col.type === 'number' ? Number(val).toFixed(col.dp ?? 2)
+                      : val));
                   return <div key={col.key} className={`stats-cell ${col.align||'left'}`}>{display}</div>;
                 })}
               </div>
@@ -983,21 +984,84 @@ const fmt2 = v => v==null ? '—' : Number(v).toFixed(2);
 const fmt0 = v => v==null ? '—' : Math.round(Number(v)).toString();
 
 function PitcherStatsTable({ rows }) {
+  const fmtPct = v => v==null ? '—' : (Number(v)*100).toFixed(1)+'%';
   const columns = [
-    { key:'last_first', label:'Pitcher',  align:'left',  type:'string', width:'minmax(160px, 2fr)' },
-    { key:'pa',         label:'PA',       align:'num',   type:'number', dp:0, width:'70px' },
-    { key:'bip',        label:'BIP',      align:'num',   type:'number', dp:0, width:'70px' },
-    { key:'era',        label:'ERA',      align:'num',   type:'number', dp:2, width:'70px' },
-    { key:'xera',       label:'xERA',     align:'num',   type:'number', dp:2, width:'70px' },
-    { key:'xfip',       label:'xFIP',     align:'num',   type:'number', dp:2, width:'70px' },
-    { key:'est_woba',   label:'xwOBA',    align:'num',   type:'number', fmt:fmt3, width:'80px' },
-    { key:'k_pct',      label:'K%',       align:'num',   type:'number', fmt:v=>v==null?'—':(Number(v)*100).toFixed(1)+'%', width:'80px' },
-    { key:'bb9',        label:'BB/9',     align:'num',   type:'number', dp:2, width:'80px' },
-    { key:'fb_pct',     label:'FB%',      align:'num',   type:'number', fmt:v=>v==null?'—':(Number(v)*100).toFixed(1)+'%', width:'80px' },
-    { key:'hr_fb_rate', label:'HR/FB',    align:'num',   type:'number', fmt:v=>v==null?'—':(Number(v)*100).toFixed(1)+'%', width:'80px' },
-    { key:'days_rest',  label:'Rest',     align:'num',   type:'number', dp:0, width:'70px' },
+    { key:'last_first',      label:'Pitcher',  align:'left',  type:'string', width:'minmax(160px, 1.8fr)' },
+    { key:'pa',              label:'PA',       align:'num',   type:'number', dp:0,  width:'60px' },
+    { key:'era',             label:'ERA',      align:'num',   type:'number', dp:2,  width:'65px' },
+    { key:'xera',            label:'xERA',     align:'num',   type:'number', dp:2,  width:'65px' },
+    { key:'xfip',            label:'xFIP',     align:'num',   type:'number', dp:2,  width:'65px' },
+    { key:'est_woba',        label:'xwOBA',    align:'num',   type:'number', fmt:fmt3, width:'70px' },
+    { key:'babip',           label:'BABIP',    align:'num',   type:'number', fmt:fmt3, width:'70px' },
+    { key:'k_pct',           label:'K%',       align:'num',   type:'number', fmt:fmtPct, width:'70px' },
+    { key:'bb9',             label:'BB/9',     align:'num',   type:'number', dp:2,  width:'70px' },
+    { key:'gb_pct',          label:'GB%',      align:'num',   type:'number', fmt:fmtPct, width:'70px' },
+    { key:'fb_pct',          label:'FB%',      align:'num',   type:'number', fmt:fmtPct, width:'70px' },
+    { key:'avg_exit_velo',   label:'EV',       align:'num',   type:'number', dp:1,  width:'70px' },
+    { key:'hard_hit_pct',    label:'HardHit%', align:'num',   type:'number', fmt:fmtPct, width:'90px' },
+    { key:'barrel_pct',      label:'Barrel%',  align:'num',   type:'number', fmt:fmtPct, width:'80px' },
+    { key:'launch_angle_avg',label:'LA',       align:'num',   type:'number', dp:1,  width:'60px' },
+    { key:'__splits',        label:'Splits',   align:'num',   type:'string', width:'80px',
+      fmt: (_, row) => <PitcherSplitsToggle row={row}/> },
   ];
   return <StatsTable rows={rows} columns={columns} defaultSort="pa" defaultDir="desc" />;
+}
+
+function PitcherSplitsToggle({ row }) {
+  const [open, setOpen] = useState(false);
+  const splits = row.splits || {};
+  const hasSplits = ['vsL','vsR','home','away'].some(k => splits[k]);
+  if (!hasSplits) return <span className="splits-na">—</span>;
+  return (
+    <>
+      <button className={'splits-toggle' + (open ? ' open' : '')} onClick={()=>setOpen(!open)}>
+        {open ? 'Hide' : 'Splits'}
+      </button>
+      {open && <PitcherSplitsPanel splits={splits}/>}
+    </>
+  );
+}
+
+function PitcherSplitsPanel({ splits }) {
+  const keys = [
+    { k:'vsL',  label:'vs LHB' },
+    { k:'vsR',  label:'vs RHB' },
+    { k:'home', label:'Home'   },
+    { k:'away', label:'Away'   },
+  ];
+  return (
+    <div className="splits-panel">
+      <table className="splits-table">
+        <thead>
+          <tr>
+            <th>Split</th><th className="num">BF</th><th className="num">IP</th>
+            <th className="num">ERA</th><th className="num">WHIP</th>
+            <th className="num">AVG</th><th className="num">OPS</th>
+            <th className="num">K%</th><th className="num">BB%</th>
+          </tr>
+        </thead>
+        <tbody>
+          {keys.map(({k, label}) => {
+            const s = splits[k];
+            if (!s) return null;
+            return (
+              <tr key={k}>
+                <td>{label}</td>
+                <td className="num">{s.pa ?? '—'}</td>
+                <td className="num">{s.ip != null ? Number(s.ip).toFixed(1) : '—'}</td>
+                <td className="num">{s.era != null ? Number(s.era).toFixed(2) : '—'}</td>
+                <td className="num">{s.whip != null ? Number(s.whip).toFixed(2) : '—'}</td>
+                <td className="num">{s.avg_against != null ? Number(s.avg_against).toFixed(3) : '—'}</td>
+                <td className="num">{s.ops_against != null ? Number(s.ops_against).toFixed(3) : '—'}</td>
+                <td className="num">{s.k_pct != null ? (Number(s.k_pct)*100).toFixed(1)+'%' : '—'}</td>
+                <td className="num">{s.bb_pct != null ? (Number(s.bb_pct)*100).toFixed(1)+'%' : '—'}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function HitterStatsTable({ rows }) {

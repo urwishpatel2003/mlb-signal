@@ -595,6 +595,236 @@ def _refresh_team_offensive_xwoba(season_year: int) -> int:
 
 
 
+
+
+# =============================================================================
+# Pitcher contact-quality from Baseball Savant — added 2026
+# Pulls: avg EV allowed, hard-hit%, barrel%, GB%, LD%, launch angle, BABIP-proxy
+# =============================================================================
+
+SAVANT_EXIT_VELO_URL = (
+    "https://baseballsavant.mlb.com/leaderboard/statcast"
+    "?type=pitcher&year={year}&position=&team=&min=10&csv=true"
+)
+
+
+def _refresh_pitcher_contact(season_year: int) -> int:
+    """Pull contact-quality metrics from Savant's pitcher Statcast leaderboard.
+
+    Columns we capture:
+      - avg_exit_velo
+      - hard_hit_pct      (Savant: hard_hit_percent / 100)
+      - barrel_pct        (Savant: barrel_batted_rate / 100)
+      - launch_angle_avg
+      - gb_pct, ld_pct    (from batted ball distribution if available)
+    """
+    import csv, io
+    url = SAVANT_EXIT_VELO_URL.format(year=season_year)
+    try:
+        r = requests.get(url, headers=SAVANT_HEADERS, timeout=30)
+        r.raise_for_status()
+        text = r.text
+    except Exception as e:
+        log.warning("Savant pitcher Statcast fetch failed: %s", e)
+        return 0
+
+    reader = csv.DictReader(io.StringIO(text))
+    update_rows = []
+    for row in reader:
+        try:
+            mlb_id = int(row.get("player_id") or row.get("mlb_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if not mlb_id:
+            continue
+
+        def _pct(field):
+            v = row.get(field)
+            try:
+                f = float(v)
+                # Savant returns percentages either as 35.4 or 0.354 — normalize
+                return round(f / 100.0, 4) if f > 1 else round(f, 4)
+            except (TypeError, ValueError):
+                return None
+
+        def _num(field):
+            v = row.get(field)
+            try:
+                return float(v) if v not in (None, "", "null") else None
+            except (TypeError, ValueError):
+                return None
+
+        update_rows.append({
+            "mlb_id":           mlb_id,
+            "season_year":      season_year,
+            "avg_exit_velo":    _num("exit_velocity_avg"),
+            "hard_hit_pct":     _pct("hard_hit_percent"),
+            "barrel_pct":       _pct("barrel_batted_rate"),
+            "launch_angle_avg": _num("launch_angle_avg"),
+            "gb_pct":           _pct("groundballs_percent") or _pct("gb_percent"),
+            "ld_pct":           _pct("linedrives_percent") or _pct("ld_percent"),
+        })
+
+    if not update_rows:
+        log.info("No Savant pitcher contact rows parsed")
+        return 0
+
+    sql = """
+        UPDATE pitcher_xstats SET
+          avg_exit_velo=%(avg_exit_velo)s,
+          hard_hit_pct=%(hard_hit_pct)s,
+          barrel_pct=%(barrel_pct)s,
+          launch_angle_avg=%(launch_angle_avg)s,
+          gb_pct=COALESCE(%(gb_pct)s, gb_pct),
+          ld_pct=COALESCE(%(ld_pct)s, ld_pct),
+          refreshed_at=now()
+        WHERE mlb_id=%(mlb_id)s AND season_year=%(season_year)s;
+    """
+    n = db.execute_many(sql, update_rows)
+    log.info("Updated %d pitcher contact-quality rows", n)
+    return n
+
+
+# =============================================================================
+# Pitcher L/R + Home/Away splits — pulled from MLB Stats API
+# =============================================================================
+
+def _refresh_pitcher_splits(season_year: int) -> int:
+    """Fetch pitching splits (vs LHB, vs RHB, home, away) for every pitcher
+    in pitcher_xstats. Writes rows to pitcher_pitching_splits.
+    """
+    rows = db.fetchall(
+        "SELECT mlb_id FROM pitcher_xstats WHERE season_year=%s", (season_year,)
+    )
+    if not rows:
+        return 0
+    log.info("Fetching pitching splits for %d pitchers", len(rows))
+    insert_rows = []
+    success = 0
+    for i, row in enumerate(rows):
+        mlb_id = row["mlb_id"]
+        url = f"{MLB_API_BASE}/people/{mlb_id}/stats"
+        params = {
+            "stats": "statSplits",
+            "group": "pitching",
+            "season": season_year,
+            "sitCodes": "vl,vr,h,a",   # vs L, vs R, home, away
+        }
+        try:
+            resp = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            log.debug("Pitcher %d splits fetch failed: %s", mlb_id, e)
+            continue
+
+        splits_blocks = (data.get("stats") or [{}])[0].get("splits", [])
+        if not splits_blocks:
+            continue
+
+        key_map = {"vl": "vsL", "vr": "vsR", "h": "home", "a": "away"}
+        for sb in splits_blocks:
+            sit_code = (sb.get("split") or {}).get("code")
+            key = key_map.get(sit_code)
+            if not key:
+                continue
+            stat = sb.get("stat") or {}
+
+            def _num(field):
+                v = stat.get(field)
+                if v in (None, "", "null", "-.--"):
+                    return None
+                try:
+                    return float(v)
+                except (TypeError, ValueError):
+                    return None
+
+            pa = _coerce_int(stat.get("battersFaced"))
+            so = _coerce_int(stat.get("strikeOuts"))
+            bb = _coerce_int(stat.get("baseOnBalls"))
+            ip = _parse_ip(stat.get("inningsPitched"))
+
+            insert_rows.append({
+                "mlb_id":       mlb_id,
+                "season_year":  season_year,
+                "split_key":    key,
+                "pa":           pa,
+                "ip":           ip,
+                "era":          _num("era"),
+                "whip":         _num("whip"),
+                "avg_against":  _num("avg"),
+                "obp_against":  _num("obp"),
+                "slg_against":  _num("slg"),
+                "ops_against":  _num("ops"),
+                "k_pct":        round(so / pa, 4) if (pa and so is not None) else None,
+                "bb_pct":       round(bb / pa, 4) if (pa and bb is not None) else None,
+            })
+        success += 1
+        if (i + 1) % 50 == 0:
+            log.info("  ... %d/%d processed (%d with splits data)", i+1, len(rows), success)
+
+    if not insert_rows:
+        return 0
+
+    sql = """
+        INSERT INTO pitcher_pitching_splits
+          (mlb_id, season_year, split_key, pa, ip, era, whip,
+           avg_against, obp_against, slg_against, ops_against,
+           k_pct, bb_pct, refreshed_at)
+        VALUES
+          (%(mlb_id)s, %(season_year)s, %(split_key)s, %(pa)s, %(ip)s, %(era)s, %(whip)s,
+           %(avg_against)s, %(obp_against)s, %(slg_against)s, %(ops_against)s,
+           %(k_pct)s, %(bb_pct)s, now())
+        ON CONFLICT (mlb_id, season_year, split_key) DO UPDATE SET
+          pa=EXCLUDED.pa, ip=EXCLUDED.ip, era=EXCLUDED.era, whip=EXCLUDED.whip,
+          avg_against=EXCLUDED.avg_against, obp_against=EXCLUDED.obp_against,
+          slg_against=EXCLUDED.slg_against, ops_against=EXCLUDED.ops_against,
+          k_pct=EXCLUDED.k_pct, bb_pct=EXCLUDED.bb_pct,
+          refreshed_at=now();
+    """
+    n = db.execute_many(sql, insert_rows)
+    log.info("Upserted %d pitching-split rows", n)
+    return n
+
+
+# =============================================================================
+# BABIP — computed from season stats already pulled in _refresh_pitcher_budget
+# =============================================================================
+def _refresh_pitcher_babip(season_year: int) -> int:
+    """Compute BABIP from existing season stats. Cheap pass over the DB."""
+    rows = db.fetchall("""
+        SELECT mlb_id FROM pitcher_xstats WHERE season_year=%s
+    """, (season_year,))
+    if not rows:
+        return 0
+    update_rows = []
+    for r in rows:
+        mlb_id = r["mlb_id"]
+        stats = _fetch_pitcher_season_stats(mlb_id, season_year)
+        if not stats:
+            continue
+        h  = _coerce_int(stats.get("hits"))     or 0
+        hr = _coerce_int(stats.get("homeRuns")) or 0
+        ab = _coerce_int(stats.get("atBats"))   or 0
+        k  = _coerce_int(stats.get("strikeOuts")) or 0
+        sf = _coerce_int(stats.get("sacFlies")) or 0
+        # BABIP = (H - HR) / (AB - K - HR + SF)
+        denom = ab - k - hr + sf
+        babip = round((h - hr) / denom, 4) if denom > 0 else None
+        if babip is None:
+            continue
+        update_rows.append({"mlb_id": mlb_id, "season_year": season_year, "babip": babip})
+    if not update_rows:
+        return 0
+    sql = """
+        UPDATE pitcher_xstats SET babip=%(babip)s, refreshed_at=now()
+        WHERE mlb_id=%(mlb_id)s AND season_year=%(season_year)s;
+    """
+    n = db.execute_many(sql, update_rows)
+    log.info("Updated %d pitcher BABIP rows", n)
+    return n
+
+
 # =============================================================================
 # Whiff rate + contact rate from Baseball Savant pitch arsenal
 # =============================================================================
@@ -831,6 +1061,9 @@ def refresh_statcast(season_year: Optional[int] = None) -> dict:
             ("pitcher budget+ratios+rest", _refresh_pitcher_budget,      "n_pitcher_budget"),
             ("pitcher whiff+contact rate", _refresh_pitcher_whiff,       "n_pitcher_whiff"),
             ("pitcher fb_pct+xfip",        _refresh_pitcher_fb_pct,      "n_pitcher_fb_pct"),
+            ("pitcher contact (Savant)",   _refresh_pitcher_contact,     "n_pitcher_contact"),
+            ("pitcher BABIP",              _refresh_pitcher_babip,        "n_pitcher_babip"),
+            ("pitcher splits (L/R/H/A)",   _refresh_pitcher_splits,      "n_pitcher_splits"),
             ("hitter budget+L15",          _refresh_hitter_budget,        "n_hitter_budget"),
             ("hitter splits",              _refresh_hitter_splits,        "n_hitter_splits"),
             ("team bullpen (season+L7)",   _refresh_team_bullpen_stats,   "n_team_bullpen"),
