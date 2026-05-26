@@ -1110,3 +1110,41 @@ def recompute_reasoning(token: str, date: str = None):
 
     return summary
 
+
+# ============================================================================
+# Retroactively zero out profit_units for prop edges
+# (Props are tracked W/L only; we don't sum them into cumulative profit.)
+# ============================================================================
+@app.get("/api/admin/zero_prop_units/{token}")
+def zero_prop_units(token: str):
+    """One-shot cleanup: set profit_units = 0 for all already-graded prop
+    edges. Their result (WIN/LOSS/PUSH) is unchanged."""
+    _check_admin(token)
+    from . import db
+
+    before = db.fetchone("""
+        SELECT COUNT(*) AS n,
+               COALESCE(SUM(er.profit_units), 0)::float AS total_profit
+        FROM edge_results er
+        JOIN edges e ON e.edge_id = er.edge_id
+        WHERE e.kind = 'prop' AND er.profit_units != 0
+    """)
+    n_before = int(before["n"] or 0)
+    profit_zeroed = float(before["total_profit"] or 0)
+
+    db.execute("""
+        UPDATE edge_results er
+        SET profit_units = 0
+        FROM edges e
+        WHERE er.edge_id = e.edge_id AND e.kind = 'prop'
+    """)
+
+    # Recompute rolling perf snapshots so cumulative recap drops the props
+    db.execute("DELETE FROM model_performance")
+
+    return {
+        "rows_zeroed": n_before,
+        "profit_units_removed": round(profit_zeroed, 2),
+        "note": "model_performance cleared — next grader run will recompute rolling sums",
+    }
+

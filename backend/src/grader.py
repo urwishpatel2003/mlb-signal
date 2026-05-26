@@ -1,5 +1,10 @@
 """
-Nightly grader — v4.3
+Nightly grader — v4.4
+
+Changes vs v4.3:
+  - Props are tracked W/L only — profit_units forced to 0.0 in grade_edge.
+  - grade_yesterday daily total_profit excludes prop edges.
+  - update_rolling_performance excludes prop profit from rolling sums.
 
 Changes vs v4.2:
   - grade_box_score: F5 runs now fetched from /api/v1/game/{pk}/linescore
@@ -190,6 +195,11 @@ def grade_edge(e: dict, actual: float, default_juice: int = -110) -> dict:
         result, profit = "NO_ACTION", 0.0
 
     stake = float(e.get("stake_units") or 1.0)
+    # Props: track W/L only, zero out profit_units (per product decision).
+    # Other edge kinds (total, f5, ml) keep their profit_units intact.
+    if kind == "prop":
+        return {"result": result, "profit_units": 0.0,
+                "actual": actual, "juice_used": juice, "stake_units": stake}
     return {"result": result, "profit_units": round(profit * stake, 4),
             "actual": actual, "juice_used": juice, "stake_units": stake}
 
@@ -267,7 +277,9 @@ def grade_yesterday(target_date: Optional[date] = None) -> dict:
             if graded["result"] == "WIN":  wins += 1
             elif graded["result"] == "LOSS": losses += 1
             elif graded["result"] == "PUSH": pushes += 1
-            total_profit += graded["profit_units"]
+            # Props are tracked W/L only — exclude from cumulative profit
+            if e.get("kind") != "prop":
+                total_profit += graded["profit_units"]
 
         metrics["wins"]         = wins
         metrics["losses"]       = losses
@@ -299,7 +311,7 @@ def update_rolling_performance(snapshot_date: date,
               COUNT(*) FILTER (WHERE er.result='WIN')  AS wins,
               COUNT(*) FILTER (WHERE er.result='LOSS') AS losses,
               COUNT(*) FILTER (WHERE er.result='PUSH') AS pushes,
-              COALESCE(SUM(er.profit_units), 0) AS profit
+              COALESCE(SUM(er.profit_units) FILTER (WHERE e.kind != 'prop'), 0) AS profit
             FROM edge_results er
             JOIN edges e ON e.edge_id=er.edge_id
             JOIN projection_runs pr ON pr.run_id=e.run_id
