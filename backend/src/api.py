@@ -1257,3 +1257,38 @@ def stats_teams():
     """, (season,))
     return {"season": season, "n": len(rows), "teams": [dict(r) for r in rows]}
 
+
+@app.get("/api/admin/diag/savant_pitcher_csv/{token}")
+def diag_savant_pitcher_csv(token: str):
+    """Show what Savant's pitcher leaderboard CSV actually returns."""
+    _check_admin(token)
+    import requests, csv, io
+    from datetime import date as _date
+    from . import statcast_refresh
+
+    year = _date.today().year
+    url = statcast_refresh.SAVANT_EXIT_VELO_URL.format(year=year)
+    try:
+        r = requests.get(url, headers=statcast_refresh.SAVANT_HEADERS, timeout=30)
+        r.raise_for_status()
+    except Exception as e:
+        return {"url": url, "error": str(e)}
+
+    text = r.text
+    reader = csv.DictReader(io.StringIO(text))
+    headers = reader.fieldnames or []
+    rows = []
+    for i, row in enumerate(reader):
+        if i >= 3:
+            break
+        rows.append(dict(row))
+
+    return {
+        "url": url,
+        "status": r.status_code,
+        "content_length": len(text),
+        "n_columns": len(headers),
+        "headers": headers,
+        "sample_rows": rows,
+    }
+
