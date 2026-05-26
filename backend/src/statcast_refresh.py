@@ -611,12 +611,22 @@ SAVANT_EXIT_VELO_URL = (
 def _refresh_pitcher_contact(season_year: int) -> int:
     """Pull contact-quality metrics from Savant's pitcher Statcast leaderboard.
 
-    Columns we capture:
-      - avg_exit_velo
-      - hard_hit_pct      (Savant: hard_hit_percent / 100)
-      - barrel_pct        (Savant: barrel_batted_rate / 100)
-      - launch_angle_avg
-      - gb_pct, ld_pct    (from batted ball distribution if available)
+    The CSV header is malformed (literal `"last_name, first_name"` with an
+    embedded comma) which csv.DictReader splits into two phantom columns.
+    Workaround: use pandas which handles quoted fields correctly, OR parse
+    by column index after skipping the broken first column header.
+
+    Real columns returned by Savant for this endpoint:
+      last_name, first_name (quoted, treat as 1 col), player_id, attempts,
+      avg_hit_angle, anglesweetspotpercent, max_hit_speed, avg_hit_speed,
+      ev50, fbld, gb, max_distance, avg_distance, avg_hr_distance,
+      ev95plus, ev95percent, barrels, brl_percent, brl_pa
+
+    Mapping to pitcher_xstats columns:
+      avg_hit_speed    -> avg_exit_velo
+      ev95percent      -> hard_hit_pct      (% balls hit 95+ mph)
+      brl_percent      -> barrel_pct
+      avg_hit_angle    -> launch_angle_avg
     """
     import csv, io
     url = SAVANT_EXIT_VELO_URL.format(year=season_year)
@@ -628,45 +638,79 @@ def _refresh_pitcher_contact(season_year: int) -> int:
         log.warning("Savant pitcher Statcast fetch failed: %s", e)
         return 0
 
-    reader = csv.DictReader(io.StringIO(text))
+    # Strip UTF-8 BOM if present (Savant prepends one)
+    if text.startswith("﻿"):
+        text = text[1:]
+
+    # Parse with csv.reader (positional) instead of DictReader, because the
+    # header has a literal quoted comma: `"last_name, first_name"`.
+    reader = csv.reader(io.StringIO(text))
+    try:
+        header = next(reader)
+    except StopIteration:
+        log.warning("Savant CSV empty")
+        return 0
+
+    # Build positional column index. csv.reader correctly handles the quoted
+    # `"last_name, first_name"` as a single field, so the indices should match
+    # the real column order returned by Savant.
+    def _idx(name):
+        try:
+            return header.index(name)
+        except ValueError:
+            log.debug("Savant column %r not found in header: %s", name, header)
+            return None
+
+    idx_player_id   = _idx("player_id")
+    idx_ev          = _idx("avg_hit_speed")
+    idx_hard_pct    = _idx("ev95percent")
+    idx_barrel_pct  = _idx("brl_percent")
+    idx_launch_ang  = _idx("avg_hit_angle")
+
+    if idx_player_id is None or idx_ev is None:
+        log.warning("Savant CSV missing required columns. Header: %s", header)
+        return 0
+
+    def _safe_float(row, idx):
+        if idx is None or idx >= len(row):
+            return None
+        v = row[idx]
+        if v in (None, "", "null", "NA"):
+            return None
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    def _safe_pct(row, idx):
+        """Savant returns percent fields as e.g. '36.8' (not 0.368). Normalize to fraction."""
+        f = _safe_float(row, idx)
+        if f is None:
+            return None
+        return round(f / 100.0, 4) if f > 1.5 else round(f, 4)
+
     update_rows = []
     for row in reader:
+        if not row or len(row) <= idx_player_id:
+            continue
         try:
-            mlb_id = int(row.get("player_id") or row.get("mlb_id") or 0)
+            mlb_id = int(row[idx_player_id])
         except (TypeError, ValueError):
             continue
         if not mlb_id:
             continue
 
-        def _pct(field):
-            v = row.get(field)
-            try:
-                f = float(v)
-                # Savant returns percentages either as 35.4 or 0.354 — normalize
-                return round(f / 100.0, 4) if f > 1 else round(f, 4)
-            except (TypeError, ValueError):
-                return None
-
-        def _num(field):
-            v = row.get(field)
-            try:
-                return float(v) if v not in (None, "", "null") else None
-            except (TypeError, ValueError):
-                return None
-
         update_rows.append({
             "mlb_id":           mlb_id,
             "season_year":      season_year,
-            "avg_exit_velo":    _num("exit_velocity_avg"),
-            "hard_hit_pct":     _pct("hard_hit_percent"),
-            "barrel_pct":       _pct("barrel_batted_rate"),
-            "launch_angle_avg": _num("launch_angle_avg"),
-            "gb_pct":           _pct("groundballs_percent") or _pct("gb_percent"),
-            "ld_pct":           _pct("linedrives_percent") or _pct("ld_percent"),
+            "avg_exit_velo":    _safe_float(row, idx_ev),
+            "hard_hit_pct":     _safe_pct(row, idx_hard_pct),
+            "barrel_pct":       _safe_pct(row, idx_barrel_pct),
+            "launch_angle_avg": _safe_float(row, idx_launch_ang),
         })
 
     if not update_rows:
-        log.info("No Savant pitcher contact rows parsed")
+        log.info("No Savant pitcher contact rows parsed (header=%s)", header)
         return 0
 
     sql = """
@@ -675,8 +719,6 @@ def _refresh_pitcher_contact(season_year: int) -> int:
           hard_hit_pct=%(hard_hit_pct)s,
           barrel_pct=%(barrel_pct)s,
           launch_angle_avg=%(launch_angle_avg)s,
-          gb_pct=COALESCE(%(gb_pct)s, gb_pct),
-          ld_pct=COALESCE(%(ld_pct)s, ld_pct),
           refreshed_at=now()
         WHERE mlb_id=%(mlb_id)s AND season_year=%(season_year)s;
     """
