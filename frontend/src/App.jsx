@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+const ADMIN_PASSWORD = 'Reddevils2003@';
+const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN || '';
+
+
 const TABS = ['Full Game O/U', 'F5 O/U', 'Moneyline', 'Pitcher Props', 'Pitchers', 'Slate', 'Stats', 'Track Record'];
 const MARKET_LABELS = {
   Total: 'Game Total', F5: 'F5 O/U', ML: 'Moneyline',
@@ -113,6 +117,7 @@ export default function App() {
           {tab==='Track Record'  && <PerformanceView perf={perf} />}
         </>
       )}
+      <AdminPanel />
       <footer className="footer">
         <span>QuAInt MLB Signal &middot; Vol II</span>
         <span>Manual review required &middot; Not financial advice</span>
@@ -1023,5 +1028,115 @@ function TeamStatsTable({ rows }) {
     { key:'bullpen_ip_l7',   label:'BP L7 IP',     align:'num',  type:'number', dp:1, width:'110px' },
   ];
   return <StatsTable rows={rows} columns={columns} defaultSort="est_woba" defaultDir="desc" />;
+}
+
+// ============================================================================
+// Admin panel — password-gated trigger buttons for orchestrator/statcast/grader
+// ============================================================================
+function AdminPanel() {
+  const [unlocked, setUnlocked] = useState(false);
+  const [pwInput, setPwInput]   = useState('');
+  const [status, setStatus]     = useState({});  // { jobName: { state, message } }
+
+  function tryUnlock(e) {
+    e.preventDefault();
+    if (pwInput === ADMIN_PASSWORD) {
+      setUnlocked(true);
+      setPwInput('');
+    } else {
+      alert('Incorrect password');
+      setPwInput('');
+    }
+  }
+
+  async function runJob(jobName, endpoint) {
+    const pw = window.prompt(`Confirm password to run ${jobName}:`);
+    if (pw === null) return;  // cancel
+    if (pw !== ADMIN_PASSWORD) {
+      alert('Incorrect password — job not triggered');
+      return;
+    }
+    if (!ADMIN_TOKEN) {
+      alert('ADMIN_TOKEN env var not set on frontend — cannot trigger jobs. Set VITE_ADMIN_TOKEN in your build env.');
+      return;
+    }
+
+    setStatus(s => ({ ...s, [jobName]: { state: 'running', message: 'Running...' }}));
+    try {
+      const url = `${API_BASE}${endpoint}/${ADMIN_TOKEN}`;
+      const r = await fetch(url);
+      if (!r.ok) {
+        const txt = await r.text();
+        setStatus(s => ({ ...s, [jobName]: { state: 'error', message: `HTTP ${r.status}: ${txt.slice(0,160)}` }}));
+        return;
+      }
+      const data = await r.json();
+      const summary = data.metrics
+        ? `Ok: ${JSON.stringify(data.metrics).slice(0, 200)}`
+        : data.result
+          ? `Ok: ${JSON.stringify(data.result).slice(0, 200)}`
+          : `Ok: ${JSON.stringify(data).slice(0, 200)}`;
+      setStatus(s => ({ ...s, [jobName]: { state: 'success', message: summary }}));
+    } catch (err) {
+      setStatus(s => ({ ...s, [jobName]: { state: 'error', message: err.message }}));
+    }
+  }
+
+  if (!unlocked) {
+    return (
+      <div className="admin-panel admin-locked">
+        <form className="admin-unlock" onSubmit={tryUnlock}>
+          <span className="admin-label">Admin</span>
+          <input
+            type="password"
+            placeholder="Password"
+            value={pwInput}
+            onChange={e => setPwInput(e.target.value)}
+            className="admin-pw-input"
+          />
+          <button type="submit" className="admin-unlock-btn">Unlock</button>
+        </form>
+      </div>
+    );
+  }
+
+  const jobs = [
+    { name: 'Orchestrator', endpoint: '/api/admin/trigger/orchestrator', desc: 'Re-run today\'s slate projection + edges' },
+    { name: 'Statcast',     endpoint: '/api/admin/trigger/statcast',     desc: 'Refresh hitter/pitcher/team xstats from Savant' },
+    { name: 'Grader',       endpoint: '/api/admin/trigger/grader',       desc: 'Grade yesterday\'s flagged edges' },
+  ];
+
+  return (
+    <div className="admin-panel admin-unlocked">
+      <div className="admin-header">
+        <span className="admin-label">Admin</span>
+        <button className="admin-lock-btn" onClick={() => setUnlocked(false)}>Lock</button>
+      </div>
+      <div className="admin-buttons">
+        {jobs.map(job => {
+          const st = status[job.name] || {};
+          return (
+            <div key={job.name} className="admin-job">
+              <div className="admin-job-head">
+                <button
+                  className={`admin-trigger-btn admin-state-${st.state || 'idle'}`}
+                  onClick={() => runJob(job.name, job.endpoint)}
+                  disabled={st.state === 'running'}
+                >
+                  {st.state === 'running' ? 'Running...' : `Run ${job.name}`}
+                </button>
+                <span className="admin-job-desc">{job.desc}</span>
+              </div>
+              {st.message && (
+                <div className={`admin-job-status admin-state-${st.state}`}>
+                  {st.message}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 

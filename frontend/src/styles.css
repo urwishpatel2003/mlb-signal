@@ -1775,3 +1775,127 @@ html, body {
   font-family: var(--text, system-ui);
   font-weight: 500;
 }
+
+
+/* ============================================================================
+   Admin panel — password-gated trigger buttons
+   ============================================================================ */
+.admin-panel {
+  margin: 28px 0 16px;
+  padding: 14px 18px;
+  background: var(--paper-2, #f5f0e0);
+  border: 1px solid var(--rule, #ddd);
+  border-radius: 0;
+}
+
+.admin-locked .admin-unlock {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.admin-label {
+  font-family: var(--mono, monospace);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--ink-2, #555);
+}
+.admin-pw-input {
+  padding: 6px 10px;
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+  border: 1px solid var(--rule, #c8c8c8);
+  background: var(--paper, #fff);
+  color: var(--ink, #111);
+  width: 200px;
+}
+.admin-pw-input:focus {
+  outline: none;
+  border-color: var(--ink, #111);
+}
+.admin-unlock-btn,
+.admin-lock-btn {
+  padding: 6px 14px;
+  font-family: var(--mono, monospace);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  background: var(--ink, #111);
+  color: var(--paper, #fff);
+  border: 1px solid var(--ink, #111);
+  cursor: pointer;
+}
+.admin-unlock-btn:hover,
+.admin-lock-btn:hover {
+  background: var(--ink-2, #444);
+}
+
+.admin-unlocked .admin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--rule, #ddd);
+}
+.admin-lock-btn {
+  background: transparent;
+  color: var(--ink-2, #555);
+  border-color: var(--rule, #c8c8c8);
+}
+
+.admin-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.admin-job-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.admin-job-desc {
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  color: var(--ink-2, #555);
+}
+.admin-trigger-btn {
+  min-width: 180px;
+  padding: 8px 16px;
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: var(--paper, #fff);
+  color: var(--ink, #111);
+  border: 1px solid var(--ink, #111);
+  cursor: pointer;
+}
+.admin-trigger-btn:hover:not(:disabled) {
+  background: var(--ink, #111);
+  color: var(--paper, #fff);
+}
+.admin-trigger-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.admin-state-running { background: #ffe9a8; color: #5b4500; border-color: #c8a04a; }
+.admin-state-success { background: #d5ebd1; color: #2c5f24; border-color: #5b8e52; }
+.admin-state-error   { background: #f5d2cc; color: #7a2418; border-color: #b8483a; }
+
+.admin-job-status {
+  margin-top: 6px;
+  margin-left: 8px;
+  padding: 6px 10px;
+  font-family: var(--mono, monospace);
+  font-size: 10px;
+  background: var(--paper, #fff);
+  border-left: 3px solid var(--rule, #ccc);
+  color: var(--ink-2, #444);
+  word-break: break-word;
+}
+.admin-job-status.admin-state-success { border-left-color: #5b8e52; }
+.admin-job-status.admin-state-error   { border-left-color: #b8483a; color: #7a2418; }
