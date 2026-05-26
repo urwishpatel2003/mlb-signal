@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 log = logging.getLogger("orchestrator")
 MODEL_VERSION = "v4.1"
 _DK_LINES: dict = {}
-EDGE_THRESHOLDS = {"Total":0.50,"F5":0.35,"ML":0.10,"K":0.50,"Hits":0.70,"ER":0.50,"Outs":0.70}
+EDGE_THRESHOLDS = {"Total":0.50,"F5":0.35,"ML":0.20,"K":0.50,"Hits":0.70,"ER":0.50,"Outs":0.70}
 
 def american_to_implied(o): return 100/(o+100) if o>0 else -o/(-o+100)
 def remove_vig(a,h): t=a+h; return a/t,h/t
@@ -115,11 +115,18 @@ def compute_edges_for_game(*,game_pk,game,away_proj,home_proj,
                 "over_price":gr.get("market_f5_over_price"),
                 "under_price":gr.get("market_f5_under_price")})
 
-    if away_ml and home_ml and projections.ml_edge_reliable(away_proj,home_proj):
+    # ML — very high conviction only:
+    #   - Both pitchers must be source='statcast' (no fallback projections)
+    #   - Favorites need 20pp edge (EDGE_THRESHOLDS["ML"] = 0.20)
+    #   - Underdogs (+100 or longer) need 60pp edge (effectively almost never)
+    both_statcast = (away_proj.source == "statcast" and home_proj.source == "statcast")
+    if (away_ml and home_ml and both_statcast
+            and projections.ml_edge_reliable(away_proj, home_proj)):
         ai,hi=remove_vig(american_to_implied(away_ml),american_to_implied(home_ml))
         hep=home_win_prob-hi; aep=away_win_prob-ai
-        # Higher threshold for big underdogs (+150 or longer) — noisy projections
-        def ml_threshold(odds): return 0.50 if odds is not None and odds >= 150 else EDGE_THRESHOLDS["ML"]
+        def ml_threshold(odds):
+            # Tightened: any non-favorite (+100 or longer) needs 60pp; fav needs 20pp
+            return 0.60 if odds is not None and odds >= 100 else EDGE_THRESHOLDS["ML"]
         if hep > 0 and hep>=ml_threshold(home_ml) and hep>=aep:
             ml_lean,ml_odds,wp,ep,oi=game.get("home_team"),home_ml,home_win_prob,hep,hi
         elif aep > 0 and aep>=ml_threshold(away_ml):

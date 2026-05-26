@@ -350,7 +350,7 @@ function MoneylineView({ edges, games }) {
   const sorted = [...edges].sort((a,b)=>Math.abs(b.ml_edge_pct||b.edge)-Math.abs(a.ml_edge_pct||a.edge));
   return (
     <section>
-      <div className="section-header"><h2>Moneyline.</h2><span className="deck">Skellam win probability vs vig-free implied odds &mdash; 4pp minimum edge</span></div>
+      <div className="section-header"><h2>Moneyline.</h2><span className="deck">Very high conviction only &mdash; 20pp min for favorites, 60pp for dogs, both SP must be Statcast</span></div>
       <div className="ml-table">
         <div className="ml-thead">
           <span>Matchup</span><span>Pick</span><span className="num">Odds</span>
@@ -362,7 +362,7 @@ function MoneylineView({ edges, games }) {
           {sorted.map((e,i) => <MLRow key={e.edge_id||i} edge={e} />)}
         </div>
       </div>
-      <p className="ml-disclaimer">ML edges use Skellam distribution on projected run totals. Min threshold 4pp.</p>
+      <p className="ml-disclaimer">ML edges use Skellam distribution on projected run totals. Very high conviction only: 20pp min for favorites, 60pp for underdogs.</p>
     </section>
   );
 }
