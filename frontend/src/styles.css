@@ -1971,3 +1971,47 @@ html, body {
   font-weight: 600;
   color: var(--ink-1, #222);
 }
+
+
+/* ============================================================================
+   Stats table — horizontal scroll + sticky first column
+   ============================================================================ */
+.stats-table {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  position: relative;
+}
+
+/* Force the inner grid not to shrink below its content width */
+.stats-table .stats-thead,
+.stats-table .stats-row {
+  min-width: max-content;
+}
+
+/* Sticky first column (Pitcher name) */
+.stats-th.sticky,
+.stats-cell.sticky {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--paper, #fff);
+  /* Visual separator on the right edge of the sticky column */
+  box-shadow: 1px 0 0 var(--rule, #ddd);
+}
+.stats-thead .stats-th.sticky {
+  background: var(--paper-2, #f5f0e0);
+}
+.stats-row:hover .stats-cell.sticky {
+  background: var(--paper-2, #f5f0e0);
+}
+
+/* The splits panel should still span the full visible row, including overflow */
+.splits-panel {
+  grid-column: 1 / -1;
+  position: sticky;
+  left: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}

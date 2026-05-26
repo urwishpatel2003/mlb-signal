@@ -951,7 +951,7 @@ function StatsTable({ rows, columns, defaultSort, defaultDir='desc', initialSear
             return (
               <button
                 key={col.key}
-                className={`stats-th ${col.align||'left'} ${active?'active':''}`}
+                className={`stats-th ${col.align||'left'} ${active?'active':''} ${col.sticky?'sticky':''}`}
                 onClick={()=>clickHeader(col)}
               >{col.label}{arrow}</button>
             );
@@ -969,7 +969,7 @@ function StatsTable({ rows, columns, defaultSort, defaultDir='desc', initialSear
                     : (val == null ? '—'
                       : col.type === 'number' ? Number(val).toFixed(col.dp ?? 2)
                       : val));
-                  return <div key={col.key} className={`stats-cell ${col.align||'left'}`}>{display}</div>;
+                  return <div key={col.key} className={`stats-cell ${col.align||'left'} ${col.sticky?'sticky':''}`}>{display}</div>;
                 })}
               </div>
             ))}
@@ -986,22 +986,22 @@ const fmt0 = v => v==null ? '—' : Math.round(Number(v)).toString();
 function PitcherStatsTable({ rows }) {
   const fmtPct = v => v==null ? '—' : (Number(v)*100).toFixed(1)+'%';
   const columns = [
-    { key:'last_first',      label:'Pitcher',  align:'left',  type:'string', width:'minmax(160px, 1.8fr)' },
-    { key:'pa',              label:'PA',       align:'num',   type:'number', dp:0,  width:'60px' },
-    { key:'era',             label:'ERA',      align:'num',   type:'number', dp:2,  width:'65px' },
-    { key:'xera',            label:'xERA',     align:'num',   type:'number', dp:2,  width:'65px' },
-    { key:'xfip',            label:'xFIP',     align:'num',   type:'number', dp:2,  width:'65px' },
-    { key:'est_woba',        label:'xwOBA',    align:'num',   type:'number', fmt:fmt3, width:'70px' },
-    { key:'babip',           label:'BABIP',    align:'num',   type:'number', fmt:fmt3, width:'70px' },
-    { key:'k_pct',           label:'K%',       align:'num',   type:'number', fmt:fmtPct, width:'70px' },
-    { key:'bb9',             label:'BB/9',     align:'num',   type:'number', dp:2,  width:'70px' },
-    { key:'gb_pct',          label:'GB%',      align:'num',   type:'number', fmt:fmtPct, width:'70px' },
-    { key:'fb_pct',          label:'FB%',      align:'num',   type:'number', fmt:fmtPct, width:'70px' },
-    { key:'avg_exit_velo',   label:'EV',       align:'num',   type:'number', dp:1,  width:'70px' },
-    { key:'hard_hit_pct',    label:'HardHit%', align:'num',   type:'number', fmt:fmtPct, width:'90px' },
-    { key:'barrel_pct',      label:'Barrel%',  align:'num',   type:'number', fmt:fmtPct, width:'80px' },
-    { key:'launch_angle_avg',label:'LA',       align:'num',   type:'number', dp:1,  width:'60px' },
-    { key:'__splits',        label:'Splits',   align:'num',   type:'string', width:'80px',
+    { key:'last_first',      label:'Pitcher',  align:'left',  type:'string', width:'minmax(150px, 1.6fr)', sticky:true },
+    { key:'pa',              label:'PA',       align:'num',   type:'number', dp:0,  width:'50px' },
+    { key:'era',             label:'ERA',      align:'num',   type:'number', dp:2,  width:'55px' },
+    { key:'xera',            label:'xERA',     align:'num',   type:'number', dp:2,  width:'55px' },
+    { key:'xfip',            label:'xFIP',     align:'num',   type:'number', dp:2,  width:'55px' },
+    { key:'est_woba',        label:'xwOBA',    align:'num',   type:'number', fmt:fmt3, width:'62px' },
+    { key:'babip',           label:'BABIP',    align:'num',   type:'number', fmt:fmt3, width:'62px' },
+    { key:'k_pct',           label:'K%',       align:'num',   type:'number', fmt:fmtPct, width:'58px' },
+    { key:'bb9',             label:'BB/9',     align:'num',   type:'number', dp:2,  width:'58px' },
+    { key:'gb_pct',          label:'GB%',      align:'num',   type:'number', fmt:fmtPct, width:'58px' },
+    { key:'fb_pct',          label:'FB%',      align:'num',   type:'number', fmt:fmtPct, width:'58px' },
+    { key:'avg_exit_velo',   label:'EV',       align:'num',   type:'number', dp:1,  width:'55px' },
+    { key:'hard_hit_pct',    label:'Hard%',    align:'num',   type:'number', fmt:fmtPct, width:'62px' },
+    { key:'barrel_pct',      label:'Brl%',     align:'num',   type:'number', fmt:fmtPct, width:'58px' },
+    { key:'launch_angle_avg',label:'LA',       align:'num',   type:'number', dp:1,  width:'50px' },
+    { key:'__splits',        label:'',         align:'num',   type:'string', width:'68px',
       fmt: (_, row) => <PitcherSplitsToggle row={row}/> },
   ];
   return <StatsTable rows={rows} columns={columns} defaultSort="pa" defaultDir="desc" />;
