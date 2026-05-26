@@ -526,7 +526,14 @@ def project_pitcher(
     _hr_fb    = float((pitcher_xstats or {}).get("hr_fb_rate") or LEAGUE_HR_FB)
     _bf9      = avg_bf_per_start / max(ip, 0.1) * 9
     _hr9      = _fb_pct * _hr_fb * (_bf9 / 3.0) * pf_hr_val
-    er9 = (true_era + woba_delta * 7) * wx_run * pf_runs * 0.65 + _hr9 * 1.4 * 0.35
+    # FIX 2026-05-26: removed structural 0.65/0.35 split that undercounted ER9
+    # by ~1.5 runs per pitcher. Main term now produces full true_era; HR
+    # context adds a small +/- adjustment when park HR factor is non-neutral.
+    er9 = (true_era + woba_delta * 7) * wx_run * pf_runs
+    # HR-park adjustment: small +/- nudge for HR-friendly / HR-suppressed parks
+    # _hr9 baseline (~0.53 for avg pitcher) deviations get a 0.4x effect
+    _hr9_baseline = LEAGUE_FB_PCT * LEAGUE_HR_FB * (38.0 / 3.0)   # ~0.53
+    er9 += (_hr9 - _hr9_baseline) * 0.4
     # K: k_pct * avg_bf_per_start (actual BF per start, not theoretical)
     k_proj  = k_pct * avg_bf_per_start * pf_so
     bb9_adj = bb9 * pf_bb
