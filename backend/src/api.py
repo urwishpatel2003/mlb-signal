@@ -1148,3 +1148,82 @@ def zero_prop_units(token: str):
         "note": "model_performance cleared — next grader run will recompute rolling sums",
     }
 
+
+# ============================================================================
+# League-wide stats endpoints (Stats page)
+# Read-only, no auth required, scoped to current season.
+# ============================================================================
+@app.get("/api/stats/pitchers")
+def stats_pitchers():
+    """All pitchers with Statcast data for the current season."""
+    from . import db
+    from datetime import date as _date
+    season = _date.today().year
+    rows = db.fetchall("""
+        SELECT mlb_id, last_first, season_year,
+               pa, bip, ba, est_ba, slg, est_slg, woba, est_woba,
+               era, xera, xfip, k_pct, bb9, fb_pct, hr_fb_rate,
+               days_rest, last_start_date::text AS last_start_date,
+               refreshed_at::text AS refreshed_at
+        FROM pitcher_xstats
+        WHERE season_year = %s
+        ORDER BY pa DESC NULLS LAST, est_woba ASC NULLS LAST
+    """, (season,))
+    return {"season": season, "n": len(rows), "pitchers": [dict(r) for r in rows]}
+
+
+@app.get("/api/stats/hitters")
+def stats_hitters():
+    """All hitters with Statcast data for the current season, with vs-LHP/vs-RHP splits."""
+    from . import db
+    from datetime import date as _date
+    season = _date.today().year
+
+    rows = db.fetchall("""
+        SELECT mlb_id, last_first, season_year,
+               pa, ba, est_ba, slg, est_slg, woba, est_woba, l15_woba,
+               refreshed_at::text AS refreshed_at
+        FROM hitter_xstats
+        WHERE season_year = %s
+        ORDER BY pa DESC NULLS LAST, est_woba DESC NULLS LAST
+    """, (season,))
+
+    # Tack on platoon splits in one query
+    splits = db.fetchall("""
+        SELECT mlb_id, vs_hand, pa, est_woba
+        FROM hitter_splits
+        WHERE season_year = %s
+    """, (season,))
+    by_id = {}
+    for s in splits:
+        d = by_id.setdefault(s["mlb_id"], {})
+        d[f"vs_{s['vs_hand']}_pa"] = s["pa"]
+        d[f"vs_{s['vs_hand']}_woba"] = float(s["est_woba"]) if s["est_woba"] is not None else None
+
+    out = []
+    for r in rows:
+        d = dict(r)
+        d.update(by_id.get(r["mlb_id"], {}))
+        out.append(d)
+
+    return {"season": season, "n": len(out), "hitters": out}
+
+
+@app.get("/api/stats/teams")
+def stats_teams():
+    """All teams with offensive + bullpen stats for current season."""
+    from . import db
+    from datetime import date as _date
+    season = _date.today().year
+    rows = db.fetchall("""
+        SELECT team_code, season_year,
+               pa, woba, est_woba, team_xwoba, team_wrc_plus,
+               bullpen_era, bullpen_xera, bullpen_ip,
+               bullpen_era_l7, bullpen_ip_l7,
+               refreshed_at::text AS refreshed_at
+        FROM team_xstats
+        WHERE season_year = %s
+        ORDER BY est_woba DESC NULLS LAST
+    """, (season,))
+    return {"season": season, "n": len(rows), "teams": [dict(r) for r in rows]}
+

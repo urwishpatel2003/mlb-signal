@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
-const TABS = ['Full Game O/U', 'F5 O/U', 'Moneyline', 'Pitcher Props', 'Pitchers', 'Slate', 'Track Record'];
+const TABS = ['Full Game O/U', 'F5 O/U', 'Moneyline', 'Pitcher Props', 'Pitchers', 'Slate', 'Stats', 'Track Record'];
 const MARKET_LABELS = {
   Total: 'Game Total', F5: 'F5 O/U', ML: 'Moneyline',
   K: 'Pitcher Strikeouts', Hits: 'Pitcher Hits Allowed',
@@ -109,6 +109,7 @@ export default function App() {
           {tab==='Pitcher Props' && <EdgesView edges={propEdges} kind="prop" />}
           {tab==='Pitchers'      && <PitchersView projections={slate.projections} games={slate.games} />}
           {tab==='Slate'         && <GamesView games={slate.games} projections={slate.projections} />}
+          {tab==='Stats'         && <StatsView />}
           {tab==='Track Record'  && <PerformanceView perf={perf} />}
         </>
       )}
@@ -853,5 +854,177 @@ function DayCard({ day }) {
       )}
     </div>
   );
+}
+
+// ============================================================================
+// Stats view — league-wide phonebook for pitchers, hitters, teams
+// ============================================================================
+const STATS_SUB_TABS = ['Pitchers', 'Hitters', 'Teams'];
+
+function StatsView() {
+  const [sub, setSub] = useState('Pitchers');
+  const [pitchers, setPitchers] = useState(null);
+  const [hitters, setHitters]   = useState(null);
+  const [teams, setTeams]       = useState(null);
+  const [error, setError]       = useState(null);
+
+  useEffect(() => {
+    if (sub === 'Pitchers' && pitchers === null) {
+      fetch(`${API_BASE}/api/stats/pitchers`).then(r=>r.json()).then(d=>setPitchers(d.pitchers||[])).catch(e=>setError(e.message));
+    } else if (sub === 'Hitters' && hitters === null) {
+      fetch(`${API_BASE}/api/stats/hitters`).then(r=>r.json()).then(d=>setHitters(d.hitters||[])).catch(e=>setError(e.message));
+    } else if (sub === 'Teams' && teams === null) {
+      fetch(`${API_BASE}/api/stats/teams`).then(r=>r.json()).then(d=>setTeams(d.teams||[])).catch(e=>setError(e.message));
+    }
+  }, [sub]);
+
+  return (
+    <section>
+      <div className="section-header">
+        <h2>Stats.</h2>
+        <span className="deck">Season-long Statcast data &middot; pitchers, hitters, teams</span>
+      </div>
+      <div className="prop-cat-tabs">
+        {STATS_SUB_TABS.map(t => (
+          <button key={t} className={`prop-cat-tab ${sub===t?'active':''}`} onClick={()=>setSub(t)}>{t}</button>
+        ))}
+      </div>
+      {error && <div className="empty">Error loading stats: {error}</div>}
+      {sub==='Pitchers' && (pitchers===null ? <div className="loading">Loading pitchers</div> : <PitcherStatsTable rows={pitchers}/>)}
+      {sub==='Hitters'  && (hitters===null  ? <div className="loading">Loading hitters</div>  : <HitterStatsTable rows={hitters}/>)}
+      {sub==='Teams'    && (teams===null    ? <div className="loading">Loading teams</div>    : <TeamStatsTable rows={teams}/>)}
+    </section>
+  );
+}
+
+function StatsTable({ rows, columns, defaultSort, defaultDir='desc', initialSearch='' }) {
+  const [sortKey, setSortKey] = useState(defaultSort);
+  const [sortDir, setSortDir] = useState(defaultDir);
+  const [search, setSearch]   = useState(initialSearch);
+
+  function clickHeader(col) {
+    if (col.key === sortKey) { setSortDir(sortDir==='asc'?'desc':'asc'); }
+    else { setSortKey(col.key); setSortDir(col.type==='number'?'desc':'asc'); }
+  }
+
+  const filtered = !search ? rows : rows.filter(r => {
+    const q = search.toLowerCase();
+    return columns.some(c => {
+      const v = r[c.key];
+      return v != null && String(v).toLowerCase().includes(q);
+    });
+  });
+
+  const sorted = [...filtered].sort((a,b) => {
+    const va = a[sortKey], vb = b[sortKey];
+    if (va == null && vb == null) return 0;
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    let cmp = (typeof va === 'number' && typeof vb === 'number') ? va - vb : String(va).localeCompare(String(vb));
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+
+  const gridTemplate = columns.map(c => c.width || '1fr').join(' ');
+
+  return (
+    <>
+      <div className="stats-toolbar">
+        <input
+          type="text"
+          className="stats-search"
+          placeholder="Search by name, team, etc."
+          value={search}
+          onChange={(e)=>setSearch(e.target.value)}
+        />
+        <span className="stats-count">{sorted.length} of {rows.length}</span>
+      </div>
+      <div className="stats-table">
+        <div className="stats-thead" style={{gridTemplateColumns: gridTemplate}}>
+          {columns.map(col => {
+            const active = sortKey === col.key;
+            const arrow = active ? (sortDir==='asc' ? ' ▲' : ' ▼') : '';
+            return (
+              <button
+                key={col.key}
+                className={`stats-th ${col.align||'left'} ${active?'active':''}`}
+                onClick={()=>clickHeader(col)}
+              >{col.label}{arrow}</button>
+            );
+          })}
+        </div>
+        <div className="stats-tbody">
+          {sorted.length === 0
+            ? <div className="empty">No rows match filter.</div>
+            : sorted.map((r,i) => (
+              <div key={r.mlb_id || r.team_code || i} className="stats-row" style={{gridTemplateColumns: gridTemplate}}>
+                {columns.map(col => {
+                  const val = r[col.key];
+                  const display = val == null ? '—'
+                    : col.fmt ? col.fmt(val)
+                    : col.type === 'number' ? Number(val).toFixed(col.dp ?? 2)
+                    : val;
+                  return <div key={col.key} className={`stats-cell ${col.align||'left'}`}>{display}</div>;
+                })}
+              </div>
+            ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+const fmt3 = v => v==null ? '—' : Number(v).toFixed(3);
+const fmt2 = v => v==null ? '—' : Number(v).toFixed(2);
+const fmt0 = v => v==null ? '—' : Math.round(Number(v)).toString();
+
+function PitcherStatsTable({ rows }) {
+  const columns = [
+    { key:'last_first', label:'Pitcher',  align:'left',  type:'string', width:'minmax(160px, 2fr)' },
+    { key:'pa',         label:'PA',       align:'num',   type:'number', dp:0, width:'70px' },
+    { key:'bip',        label:'BIP',      align:'num',   type:'number', dp:0, width:'70px' },
+    { key:'era',        label:'ERA',      align:'num',   type:'number', dp:2, width:'70px' },
+    { key:'xera',       label:'xERA',     align:'num',   type:'number', dp:2, width:'70px' },
+    { key:'xfip',       label:'xFIP',     align:'num',   type:'number', dp:2, width:'70px' },
+    { key:'est_woba',   label:'xwOBA',    align:'num',   type:'number', fmt:fmt3, width:'80px' },
+    { key:'k_pct',      label:'K%',       align:'num',   type:'number', fmt:v=>v==null?'—':(Number(v)*100).toFixed(1)+'%', width:'80px' },
+    { key:'bb9',        label:'BB/9',     align:'num',   type:'number', dp:2, width:'80px' },
+    { key:'fb_pct',     label:'FB%',      align:'num',   type:'number', fmt:v=>v==null?'—':(Number(v)*100).toFixed(1)+'%', width:'80px' },
+    { key:'hr_fb_rate', label:'HR/FB',    align:'num',   type:'number', fmt:v=>v==null?'—':(Number(v)*100).toFixed(1)+'%', width:'80px' },
+    { key:'days_rest',  label:'Rest',     align:'num',   type:'number', dp:0, width:'70px' },
+  ];
+  return <StatsTable rows={rows} columns={columns} defaultSort="pa" defaultDir="desc" />;
+}
+
+function HitterStatsTable({ rows }) {
+  const columns = [
+    { key:'last_first', label:'Hitter',   align:'left', type:'string', width:'minmax(160px, 2fr)' },
+    { key:'pa',         label:'PA',       align:'num',  type:'number', dp:0, width:'70px' },
+    { key:'ba',         label:'BA',       align:'num',  type:'number', fmt:fmt3, width:'80px' },
+    { key:'est_ba',     label:'xBA',      align:'num',  type:'number', fmt:fmt3, width:'80px' },
+    { key:'slg',        label:'SLG',      align:'num',  type:'number', fmt:fmt3, width:'80px' },
+    { key:'est_slg',    label:'xSLG',     align:'num',  type:'number', fmt:fmt3, width:'80px' },
+    { key:'woba',       label:'wOBA',     align:'num',  type:'number', fmt:fmt3, width:'80px' },
+    { key:'est_woba',   label:'xwOBA',    align:'num',  type:'number', fmt:fmt3, width:'80px' },
+    { key:'l15_woba',   label:'L15 wOBA', align:'num',  type:'number', fmt:fmt3, width:'90px' },
+    { key:'vs_L_woba',  label:'vs LHP',   align:'num',  type:'number', fmt:fmt3, width:'80px' },
+    { key:'vs_R_woba',  label:'vs RHP',   align:'num',  type:'number', fmt:fmt3, width:'80px' },
+  ];
+  return <StatsTable rows={rows} columns={columns} defaultSort="est_woba" defaultDir="desc" />;
+}
+
+function TeamStatsTable({ rows }) {
+  const columns = [
+    { key:'team_code',       label:'Team',         align:'left', type:'string', width:'minmax(80px, 1fr)' },
+    { key:'pa',              label:'PA',           align:'num',  type:'number', dp:0, width:'80px' },
+    { key:'woba',            label:'wOBA',         align:'num',  type:'number', fmt:fmt3, width:'80px' },
+    { key:'est_woba',        label:'xwOBA',        align:'num',  type:'number', fmt:fmt3, width:'80px' },
+    { key:'team_wrc_plus',   label:'wRC+',         align:'num',  type:'number', dp:0, width:'80px' },
+    { key:'bullpen_era',     label:'BP ERA',       align:'num',  type:'number', dp:2, width:'90px' },
+    { key:'bullpen_xera',    label:'BP xERA',      align:'num',  type:'number', dp:2, width:'90px' },
+    { key:'bullpen_ip',      label:'BP IP',        align:'num',  type:'number', dp:1, width:'90px' },
+    { key:'bullpen_era_l7',  label:'BP L7 ERA',    align:'num',  type:'number', dp:2, width:'100px' },
+    { key:'bullpen_ip_l7',   label:'BP L7 IP',     align:'num',  type:'number', dp:1, width:'100px' },
+  ];
+  return <StatsTable rows={rows} columns={columns} defaultSort="est_woba" defaultDir="desc" />;
 }
 

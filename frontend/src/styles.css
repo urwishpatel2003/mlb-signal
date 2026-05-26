@@ -1684,3 +1684,94 @@ html, body {
   min-width: 28px;
   flex: 0 0 auto;
 }
+
+
+/* ============================================================================
+   Stats page tables — phonebook-style for Pitchers/Hitters/Teams
+   ============================================================================ */
+.stats-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+  gap: 12px;
+}
+.stats-search {
+  flex: 1;
+  max-width: 320px;
+  padding: 8px 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  border: 1px solid var(--rule);
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.stats-search:focus {
+  outline: none;
+  border-color: var(--ink);
+}
+.stats-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.stats-table {
+  width: 100%;
+  overflow-x: auto;
+}
+.stats-thead {
+  display: grid;
+  gap: 0 8px;
+  background: var(--paper-2);
+  border-bottom: 2px solid var(--ink);
+  padding: 0;
+}
+.stats-th {
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  font-weight: 700;
+  padding: 10px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stats-th.num { text-align: right; }
+.stats-th.active { color: var(--ink); background: var(--paper); }
+.stats-th:hover { color: var(--ink); }
+
+.stats-tbody { background: var(--paper); }
+.stats-row {
+  display: grid;
+  gap: 0 8px;
+  padding: 0;
+  border-bottom: 1px solid var(--rule);
+  align-items: center;
+}
+.stats-row:hover { background: var(--paper-2); }
+.stats-cell {
+  padding: 9px 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stats-cell.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.stats-cell.left {
+  font-family: var(--text, system-ui);
+  font-weight: 500;
+}
