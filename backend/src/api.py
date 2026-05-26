@@ -1211,19 +1211,26 @@ def stats_hitters():
 
 @app.get("/api/stats/teams")
 def stats_teams():
-    """All teams with offensive + bullpen stats for current season."""
+    """All teams with offensive + bullpen stats for current season.
+
+    Note: 'team_xwoba' is the team's own hitting xwOBA (offensive strength)
+    written by the team_offensive_xwoba refresh job. The 'woba'/'est_woba'
+    columns in this table are unused; we don't return them.
+    """
     from . import db
     from datetime import date as _date
     season = _date.today().year
     rows = db.fetchall("""
         SELECT team_code, season_year,
-               pa, woba, est_woba, team_xwoba, team_wrc_plus,
+               pa,
+               team_xwoba   AS est_woba,
+               team_woba_l5 AS l5_woba,
                bullpen_era, bullpen_xera, bullpen_ip,
                bullpen_era_l7, bullpen_ip_l7,
                refreshed_at::text AS refreshed_at
         FROM team_xstats
         WHERE season_year = %s
-        ORDER BY est_woba DESC NULLS LAST
+        ORDER BY team_xwoba DESC NULLS LAST
     """, (season,))
     return {"season": season, "n": len(rows), "teams": [dict(r) for r in rows]}
 

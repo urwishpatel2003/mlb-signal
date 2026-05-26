@@ -1016,9 +1016,8 @@ function TeamStatsTable({ rows }) {
   const columns = [
     { key:'team_code',       label:'Team',         align:'left', type:'string', width:'minmax(80px, 1fr)' },
     { key:'pa',              label:'PA',           align:'num',  type:'number', dp:0, width:'80px' },
-    { key:'woba',            label:'wOBA',         align:'num',  type:'number', fmt:fmt3, width:'80px' },
-    { key:'est_woba',        label:'xwOBA',        align:'num',  type:'number', fmt:fmt3, width:'80px' },
-    { key:'team_wrc_plus',   label:'wRC+',         align:'num',  type:'number', dp:0, width:'80px' },
+    { key:'est_woba',        label:'xwOBA',        align:'num',  type:'number', fmt:fmt3, width:'90px' },
+    { key:'l5_woba',         label:'L5 wOBA',      align:'num',  type:'number', fmt:fmt3, width:'90px' },
     { key:'bullpen_era',     label:'BP ERA',       align:'num',  type:'number', dp:2, width:'90px' },
     { key:'bullpen_xera',    label:'BP xERA',      align:'num',  type:'number', dp:2, width:'90px' },
     { key:'bullpen_ip',      label:'BP IP',        align:'num',  type:'number', dp:1, width:'90px' },
