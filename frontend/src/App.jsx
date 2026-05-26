@@ -1015,14 +1015,12 @@ function HitterStatsTable({ rows }) {
 function TeamStatsTable({ rows }) {
   const columns = [
     { key:'team_code',       label:'Team',         align:'left', type:'string', width:'minmax(80px, 1fr)' },
-    { key:'pa',              label:'PA',           align:'num',  type:'number', dp:0, width:'80px' },
-    { key:'est_woba',        label:'xwOBA',        align:'num',  type:'number', fmt:fmt3, width:'90px' },
-    { key:'l5_woba',         label:'L5 wOBA',      align:'num',  type:'number', fmt:fmt3, width:'90px' },
-    { key:'bullpen_era',     label:'BP ERA',       align:'num',  type:'number', dp:2, width:'90px' },
-    { key:'bullpen_xera',    label:'BP xERA',      align:'num',  type:'number', dp:2, width:'90px' },
-    { key:'bullpen_ip',      label:'BP IP',        align:'num',  type:'number', dp:1, width:'90px' },
-    { key:'bullpen_era_l7',  label:'BP L7 ERA',    align:'num',  type:'number', dp:2, width:'100px' },
-    { key:'bullpen_ip_l7',   label:'BP L7 IP',     align:'num',  type:'number', dp:1, width:'100px' },
+    { key:'est_woba',        label:'xwOBA',        align:'num',  type:'number', fmt:fmt3, width:'100px' },
+    { key:'l5_woba',         label:'L5 wOBA',      align:'num',  type:'number', fmt:fmt3, width:'100px' },
+    { key:'bullpen_era',     label:'BP ERA',       align:'num',  type:'number', dp:2, width:'100px' },
+    { key:'bullpen_ip',      label:'BP IP',        align:'num',  type:'number', dp:1, width:'100px' },
+    { key:'bullpen_era_l7',  label:'BP L7 ERA',    align:'num',  type:'number', dp:2, width:'110px' },
+    { key:'bullpen_ip_l7',   label:'BP L7 IP',     align:'num',  type:'number', dp:1, width:'110px' },
   ];
   return <StatsTable rows={rows} columns={columns} defaultSort="est_woba" defaultDir="desc" />;
 }
