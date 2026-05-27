@@ -2021,3 +2021,239 @@ html, body {
 .admin-state-running.admin-item-btn { background: #ffe9a8; color: #5b4500; border-color: #c8a04a; }
 .admin-state-success.admin-item-btn { background: #d5ebd1; color: #2c5f24; border-color: #5b8e52; }
 .admin-state-error.admin-item-btn   { background: #f5d2cc; color: #7a2418; border-color: #b8483a; }
+
+
+/* ============================================================================
+   Personal bets - modal + button + record
+   ============================================================================ */
+.bet-btn {
+  font-family: var(--mono, monospace);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  background: transparent;
+  color: var(--ink-2, #555);
+  border: 1px solid var(--rule, #c8c8c8);
+  cursor: pointer;
+}
+.bet-btn:hover {
+  background: var(--ink, #111);
+  color: var(--paper, #fff);
+}
+.bet-btn.has-bet {
+  background: #d5ebd1;
+  color: #2c5f24;
+  border-color: #5b8e52;
+}
+.bet-btn.has-bet:hover {
+  background: #5b8e52;
+  color: #fff;
+}
+
+.bet-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.bet-modal {
+  background: var(--paper, #fff);
+  border: 2px solid var(--ink, #111);
+  padding: 20px;
+  min-width: 340px;
+  max-width: 440px;
+  width: 90%;
+}
+.bet-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-bottom: 1px solid var(--rule, #ccc);
+  padding-bottom: 8px;
+  margin-bottom: 14px;
+}
+.bet-modal-header h3 {
+  font-family: var(--display, serif);
+  font-size: 20px;
+  margin: 0;
+  color: var(--ink, #111);
+}
+.bet-modal-close {
+  background: transparent;
+  border: none;
+  font-size: 22px;
+  cursor: pointer;
+  color: var(--ink-2, #555);
+  padding: 0 8px;
+}
+.bet-modal-edge {
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--ink-2, #555);
+  margin-bottom: 14px;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+.bet-field {
+  display: block;
+  margin-bottom: 12px;
+}
+.bet-field > span {
+  display: block;
+  font-family: var(--mono, monospace);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2, #555);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.bet-field input,
+.bet-field textarea {
+  width: 100%;
+  padding: 8px 10px;
+  font-family: var(--mono, monospace);
+  font-size: 13px;
+  border: 1px solid var(--rule, #ccc);
+  background: var(--paper-2, #f5f0e0);
+  color: var(--ink, #111);
+  box-sizing: border-box;
+}
+.bet-field input:focus,
+.bet-field textarea:focus {
+  outline: none;
+  border-color: var(--ink, #111);
+  background: var(--paper, #fff);
+}
+.bet-modal-error {
+  background: #fbeee9;
+  color: #7a2418;
+  border-left: 3px solid #b8483a;
+  padding: 8px 10px;
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  margin-bottom: 10px;
+}
+.bet-modal-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule, #ccc);
+}
+.bet-modal-save,
+.bet-modal-cancel,
+.bet-modal-delete {
+  padding: 8px 16px;
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid var(--ink, #111);
+}
+.bet-modal-save {
+  background: var(--ink, #111);
+  color: var(--paper, #fff);
+}
+.bet-modal-cancel {
+  background: transparent;
+  color: var(--ink, #111);
+}
+.bet-modal-delete {
+  background: transparent;
+  color: #7a2418;
+  border-color: #b8483a;
+}
+.bet-modal-save:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ---- My Record page ---- */
+.my-record-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.my-record-card {
+  background: var(--paper-2, #f5f0e0);
+  border: 1px solid var(--rule, #ddd);
+  padding: 14px 16px;
+}
+.my-record-card .card-label {
+  font-family: var(--mono, monospace);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-2, #555);
+  font-weight: 700;
+}
+.my-record-card .card-value {
+  font-family: var(--display, serif);
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--ink, #111);
+  margin-top: 4px;
+}
+.my-record-card .card-sub {
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  color: var(--ink-2, #555);
+  margin-top: 4px;
+}
+.my-record-card.card-positive { border-left: 3px solid #5b8e52; }
+.my-record-card.card-negative { border-left: 3px solid #b8483a; }
+.my-record-card.card-positive .card-value { color: #2c5f24; }
+.my-record-card.card-negative .card-value { color: #7a2418; }
+
+.my-record-section-title {
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--ink, #111);
+  border-bottom: 1px solid var(--rule, #ccc);
+  padding-bottom: 4px;
+  margin: 22px 0 10px;
+}
+
+.my-record-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono, monospace);
+  font-size: 12px;
+}
+.my-record-table thead th {
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2, #555);
+  font-weight: 700;
+  border-bottom: 2px solid var(--ink, #111);
+}
+.my-record-table thead th.num,
+.my-record-table tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.my-record-table tbody td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--rule, #ece5d0);
+  color: var(--ink, #111);
+}
+.my-record-table tbody tr:hover { background: var(--paper-2, #f5f0e0); }
+.pnl-positive { color: #2c5f24; font-weight: 700; }
+.pnl-negative { color: #7a2418; font-weight: 700; }
+.result-win   { color: #2c5f24; font-weight: 700; }
+.result-loss  { color: #7a2418; font-weight: 700; }
+.result-push  { color: var(--ink-2, #555); }

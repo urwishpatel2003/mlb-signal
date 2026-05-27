@@ -4,7 +4,7 @@ const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN || '';
 
 
-const TABS = ['Full Game O/U', 'F5 O/U', 'Moneyline', 'Pitcher Props', 'Pitchers', 'Slate', 'Stats', 'Track Record'];
+const TABS = ['Full Game O/U', 'F5 O/U', 'Moneyline', 'Pitcher Props', 'Pitchers', 'Slate', 'Stats', 'My Record', 'Track Record'];
 const MARKET_LABELS = {
   Total: 'Game Total', F5: 'F5 O/U', ML: 'Moneyline',
   K: 'Pitcher Strikeouts', Hits: 'Pitcher Hits Allowed',
@@ -114,6 +114,7 @@ export default function App() {
           {tab==='Pitchers'      && <PitchersView projections={slate.projections} games={slate.games} />}
           {tab==='Slate'         && <GamesView games={slate.games} projections={slate.projections} />}
           {tab==='Stats'         && <StatsView />}
+          {tab==='My Record'     && <MyRecordView />}
           {tab==='Track Record'  && <PerformanceView perf={perf} />}
         </>
       )}
@@ -1209,6 +1210,268 @@ function AdminGroup({ label, items, results, onCall, note }) {
         })}
       </div>
     </div>
+  );
+}
+
+// ============================================================================
+// Personal Bets — modal to enter $ + juice + book, button on each edge
+// ============================================================================
+function BetButton({ edge, onChange }) {
+  const [bet, setBet] = useState(undefined);  // undefined=unknown, null=not bet, obj=bet exists
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    // On mount, fetch bets to see if this edge has one
+    fetch(`${API_BASE}/api/personal_bets`).then(r=>r.json()).then(d => {
+      const found = (d.bets || []).find(b => b.edge_id === edge.edge_id);
+      setBet(found || null);
+    });
+  }, [edge.edge_id]);
+
+  function handleSaved(saved) {
+    setBet(saved);
+    setOpen(false);
+    if (onChange) onChange();
+  }
+
+  async function handleDelete() {
+    if (!bet?.bet_id) return;
+    if (!window.confirm('Remove this bet from your record?')) return;
+    await fetch(`${API_BASE}/api/personal_bets/${bet.bet_id}`, { method: 'DELETE' });
+    setBet(null);
+    if (onChange) onChange();
+  }
+
+  const hasBet = bet && bet.bet_id;
+
+  return (
+    <>
+      <button
+        className={`bet-btn ${hasBet ? 'has-bet' : ''}`}
+        onClick={() => setOpen(true)}
+        title={hasBet ? `$${bet.dollar_amount} @ ${bet.juice > 0 ? '+' : ''}${bet.juice}` : 'Add to my bets'}
+      >
+        {hasBet ? `\u2713 $${Number(bet.dollar_amount).toFixed(0)}` : '+ Bet'}
+      </button>
+      {open && (
+        <BetModal
+          edge={edge}
+          existing={hasBet ? bet : null}
+          onSave={handleSaved}
+          onDelete={hasBet ? handleDelete : null}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+
+function BetModal({ edge, existing, onSave, onDelete, onClose }) {
+  const [amount, setAmount]   = useState(existing?.dollar_amount ?? 100);
+  const [juice, setJuice]     = useState(existing?.juice ?? -110);
+  const [book, setBook]       = useState(existing?.sportsbook ?? '');
+  const [notes, setNotes]     = useState(existing?.notes ?? '');
+  const [saving, setSaving]   = useState(false);
+  const [error, setError]     = useState(null);
+
+  async function handleSave(e) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      const body = {
+        edge_id: edge.edge_id,
+        dollar_amount: parseFloat(amount),
+        juice: parseInt(juice, 10),
+        sportsbook: book || null,
+        notes: notes || null,
+      };
+      const r = await fetch(`${API_BASE}/api/personal_bets`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const txt = await r.text();
+        setError(`HTTP ${r.status}: ${txt.slice(0,200)}`);
+        return;
+      }
+      onSave({ ...body, bet_id: (await r.json()).bet_id });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const description = `${edge.kind?.toUpperCase()} \u00b7 ${edge.lean} ${edge.line}`;
+
+  return (
+    <div className="bet-modal-backdrop" onClick={onClose}>
+      <form className="bet-modal" onClick={e => e.stopPropagation()} onSubmit={handleSave}>
+        <div className="bet-modal-header">
+          <h3>{existing ? 'Edit Bet' : 'Add Bet'}</h3>
+          <button type="button" className="bet-modal-close" onClick={onClose}>\u00d7</button>
+        </div>
+        <div className="bet-modal-edge">{description}</div>
+
+        <label className="bet-field">
+          <span>$ Amount</span>
+          <input type="number" step="0.01" min="0" value={amount}
+                 onChange={e => setAmount(e.target.value)} autoFocus required />
+        </label>
+
+        <label className="bet-field">
+          <span>Juice / Odds</span>
+          <input type="number" value={juice}
+                 onChange={e => setJuice(e.target.value)} required
+                 placeholder="-110, +130, etc." />
+        </label>
+
+        <label className="bet-field">
+          <span>Sportsbook</span>
+          <input type="text" value={book}
+                 onChange={e => setBook(e.target.value)}
+                 placeholder="DK / FD / BetMGM / etc." />
+        </label>
+
+        <label className="bet-field">
+          <span>Notes</span>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows="2"
+                    placeholder="optional" />
+        </label>
+
+        {error && <div className="bet-modal-error">{error}</div>}
+
+        <div className="bet-modal-actions">
+          {existing && onDelete && (
+            <button type="button" className="bet-modal-delete" onClick={onDelete}>Remove</button>
+          )}
+          <div style={{ flex: 1 }} />
+          <button type="button" className="bet-modal-cancel" onClick={onClose}>Cancel</button>
+          <button type="submit" className="bet-modal-save" disabled={saving}>
+            {saving ? 'Saving...' : (existing ? 'Update' : 'Save')}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+
+// ============================================================================
+// My Record view — same shape as Track Record but personal_bets only
+// ============================================================================
+function MyRecordView() {
+  const [summary, setSummary] = useState(null);
+  const [bets, setBets]       = useState(null);
+  const [error, setError]     = useState(null);
+
+  useEffect(() => {
+    Promise.all([
+      fetch(`${API_BASE}/api/personal_bets/summary`).then(r => r.json()),
+      fetch(`${API_BASE}/api/personal_bets`).then(r => r.json()),
+    ]).then(([s, b]) => {
+      setSummary(s);
+      setBets(b.bets || []);
+    }).catch(e => setError(e.message));
+  }, []);
+
+  if (error) return <div className="empty">Error: {error}</div>;
+  if (!summary || !bets) return <div className="loading">Loading your bets</div>;
+
+  return (
+    <section>
+      <div className="section-header">
+        <h2>My Record.</h2>
+        <span className="deck">Personal $ wagers on flagged edges</span>
+      </div>
+
+      <div className="my-record-cards">
+        <div className="my-record-card">
+          <div className="card-label">Bets</div>
+          <div className="card-value">{summary.n_bets}</div>
+          <div className="card-sub">{summary.wins}W &middot; {summary.losses}L &middot; {summary.pushes}P</div>
+        </div>
+        <div className="my-record-card">
+          <div className="card-label">Staked</div>
+          <div className="card-value">${summary.total_staked.toFixed(2)}</div>
+        </div>
+        <div className={`my-record-card ${summary.cumulative_pnl >= 0 ? 'card-positive' : 'card-negative'}`}>
+          <div className="card-label">P&L</div>
+          <div className="card-value">{summary.cumulative_pnl >= 0 ? '+' : ''}${summary.cumulative_pnl.toFixed(2)}</div>
+        </div>
+        <div className="my-record-card">
+          <div className="card-label">ROI</div>
+          <div className="card-value">{(summary.roi * 100).toFixed(1)}%</div>
+        </div>
+        {summary.pending > 0 && (
+          <div className="my-record-card">
+            <div className="card-label">Pending</div>
+            <div className="card-value">{summary.pending}</div>
+          </div>
+        )}
+      </div>
+
+      {summary.days.length === 0
+        ? <div className="empty">No bets placed yet. Pick edges from the slate and add $ amounts.</div>
+        : (
+          <>
+            <h3 className="my-record-section-title">By Date</h3>
+            <table className="my-record-table">
+              <thead>
+                <tr>
+                  <th>Date</th><th className="num">Bets</th><th className="num">Record</th>
+                  <th className="num">Staked</th><th className="num">P&L</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summary.days.map(d => (
+                  <tr key={d.run_date}>
+                    <td>{d.run_date}</td>
+                    <td className="num">{d.n_bets}</td>
+                    <td className="num">{d.wins}-{d.losses}{d.pushes ? '-' + d.pushes : ''}{d.pending ? ` (${d.pending} pending)` : ''}</td>
+                    <td className="num">${d.staked.toFixed(2)}</td>
+                    <td className={`num ${d.pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`}>
+                      {d.pnl >= 0 ? '+' : ''}${d.pnl.toFixed(2)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <h3 className="my-record-section-title">All Bets</h3>
+            <table className="my-record-table">
+              <thead>
+                <tr>
+                  <th>Date</th><th>Game</th><th>Bet</th>
+                  <th className="num">Stake</th><th className="num">Juice</th>
+                  <th>Book</th><th>Result</th><th className="num">P&L</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bets.map(b => (
+                  <tr key={b.bet_id}>
+                    <td>{b.run_date}</td>
+                    <td>{b.away_team}@{b.home_team}</td>
+                    <td>{b.kind?.toUpperCase()} {b.lean} {b.line}</td>
+                    <td className="num">${Number(b.dollar_amount).toFixed(2)}</td>
+                    <td className="num">{b.juice > 0 ? '+' : ''}{b.juice}</td>
+                    <td>{b.sportsbook || '\u2014'}</td>
+                    <td className={`result-${(b.result || '').toLowerCase()}`}>
+                      {b.result || 'pending'}
+                    </td>
+                    <td className={`num ${b.dollar_pnl == null ? '' : (b.dollar_pnl >= 0 ? 'pnl-positive' : 'pnl-negative')}`}>
+                      {b.dollar_pnl == null ? '\u2014' : (b.dollar_pnl >= 0 ? '+$' : '-$') + Math.abs(b.dollar_pnl).toFixed(2)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )
+      }
+    </section>
   );
 }
 

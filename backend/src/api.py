@@ -1381,3 +1381,128 @@ def cleanup_orphan_results(token: str, dry_run: bool = False):
     result["note"] = "Next grader run will rebuild rolling performance from clean data"
     return result
 
+
+# ============================================================================
+# Personal bets — user-tracked dollar wagers on flagged edges
+# ============================================================================
+@app.get("/api/personal_bets")
+def list_personal_bets():
+    """All personal bets joined with edge details + grading result."""
+    rows = db.fetchall("""
+        SELECT pb.bet_id, pb.edge_id, pb.dollar_amount, pb.juice,
+               pb.sportsbook, pb.notes,
+               pb.placed_at::text AS placed_at,
+               pb.updated_at::text AS updated_at,
+               e.kind, e.category, e.lean, e.line, e.proj_value, e.edge,
+               e.pitcher_name, e.team_code, e.opp_team_code, e.game_pk,
+               e.flagged AS edge_still_flagged,
+               pr.run_date::text AS run_date,
+               g.away_team, g.home_team,
+               g.away_score, g.home_score, g.status,
+               er.result, er.actual_value
+        FROM personal_bets pb
+        JOIN edges e ON e.edge_id = pb.edge_id
+        JOIN projection_runs pr ON pr.run_id = e.run_id
+        LEFT JOIN games g ON g.game_pk = e.game_pk
+        LEFT JOIN edge_results er ON er.edge_id = e.edge_id
+        ORDER BY pb.placed_at DESC
+    """)
+    bets = []
+    for r in rows:
+        d = dict(r)
+        # Compute $ P&L from juice + result + stake
+        result = d.get("result")
+        juice  = int(d["juice"]) if d.get("juice") is not None else -110
+        stake  = float(d["dollar_amount"])
+        payout = None
+        if result == "WIN":
+            if juice < 0:
+                payout = stake * (100.0 / abs(juice))
+            else:
+                payout = stake * (juice / 100.0)
+        elif result == "LOSS":
+            payout = -stake
+        elif result == "PUSH":
+            payout = 0.0
+        d["dollar_pnl"] = round(payout, 2) if payout is not None else None
+        bets.append(d)
+    return {"n": len(bets), "bets": bets}
+
+
+from pydantic import BaseModel as _BaseModel
+
+class _PersonalBetIn(_BaseModel):
+    edge_id: int
+    dollar_amount: float
+    juice: int
+    sportsbook: str | None = None
+    notes: str | None = None
+
+
+@app.post("/api/personal_bets")
+def upsert_personal_bet(bet: _PersonalBetIn):
+    """Create or update a personal bet for an edge (one bet per edge)."""
+    existing = db.fetchone(
+        "SELECT bet_id FROM personal_bets WHERE edge_id=%s", (bet.edge_id,)
+    )
+    if existing:
+        db.execute("""
+            UPDATE personal_bets
+            SET dollar_amount=%s, juice=%s, sportsbook=%s, notes=%s, updated_at=now()
+            WHERE bet_id=%s
+        """, (bet.dollar_amount, bet.juice, bet.sportsbook, bet.notes, existing["bet_id"]))
+        return {"bet_id": existing["bet_id"], "action": "updated"}
+    row = db.fetchone("""
+        INSERT INTO personal_bets (edge_id, dollar_amount, juice, sportsbook, notes)
+        VALUES (%s, %s, %s, %s, %s)
+        RETURNING bet_id
+    """, (bet.edge_id, bet.dollar_amount, bet.juice, bet.sportsbook, bet.notes))
+    return {"bet_id": int(row["bet_id"]), "action": "created"}
+
+
+@app.delete("/api/personal_bets/{bet_id}")
+def delete_personal_bet(bet_id: int):
+    db.execute("DELETE FROM personal_bets WHERE bet_id=%s", (bet_id,))
+    return {"bet_id": bet_id, "deleted": True}
+
+
+@app.get("/api/personal_bets/summary")
+def personal_bets_summary():
+    """Daily + cumulative dollar P&L summary."""
+    bets = list_personal_bets()["bets"]
+    by_date = {}
+    cumulative_pnl = 0.0
+    total_staked = 0.0
+    wins = losses = pushes = pending = 0
+    for b in bets:
+        d = b["run_date"]
+        day = by_date.setdefault(d, {
+            "run_date": d, "n_bets": 0, "wins": 0, "losses": 0, "pushes": 0,
+            "pending": 0, "staked": 0.0, "pnl": 0.0,
+        })
+        day["n_bets"] += 1
+        day["staked"] += float(b["dollar_amount"])
+        total_staked += float(b["dollar_amount"])
+        if b.get("dollar_pnl") is None:
+            day["pending"] += 1
+            pending += 1
+            continue
+        day["pnl"] += float(b["dollar_pnl"])
+        cumulative_pnl += float(b["dollar_pnl"])
+        if b["result"] == "WIN":   day["wins"] += 1;   wins += 1
+        if b["result"] == "LOSS":  day["losses"] += 1; losses += 1
+        if b["result"] == "PUSH":  day["pushes"] += 1; pushes += 1
+    days = sorted(by_date.values(), key=lambda x: x["run_date"], reverse=True)
+    # Round
+    for d in days:
+        d["staked"] = round(d["staked"], 2)
+        d["pnl"] = round(d["pnl"], 2)
+    return {
+        "n_bets": len(bets),
+        "wins": wins, "losses": losses, "pushes": pushes, "pending": pending,
+        "total_staked": round(total_staked, 2),
+        "cumulative_pnl": round(cumulative_pnl, 2),
+        "roi": round(cumulative_pnl / total_staked, 4) if total_staked > 0 else 0.0,
+        "days": days,
+    }
+
