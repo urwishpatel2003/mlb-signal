@@ -1276,12 +1276,21 @@ function BetButton({ edge, onChange }) {
 }
 
 function BetModal({ edge, existing, onSave, onDelete, onClose }) {
+  // Available sides depend on edge kind.
+  //   total/f5/prop -> OVER / UNDER
+  //   ml            -> home team / away team
+  const sideOptions = edge.kind === 'ml'
+    ? [edge.team_code, edge.opp_team_code].filter(Boolean)
+    : ['OVER', 'UNDER'];
+  const defaultSide = existing?.lean_taken ?? edge.lean ?? sideOptions[0];
+  const [side, setSide]       = useState(defaultSide);
   const [amount, setAmount]   = useState(existing?.dollar_amount ?? 100);
   const [juice, setJuice]     = useState(existing?.juice ?? -110);
   const [book, setBook]       = useState(existing?.sportsbook ?? '');
   const [notes, setNotes]     = useState(existing?.notes ?? '');
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState(null);
+  const isFade = side !== edge.lean;
 
   async function handleSave(e) {
     e.preventDefault();
@@ -1292,6 +1301,7 @@ function BetModal({ edge, existing, onSave, onDelete, onClose }) {
         edge_id: edge.edge_id,
         dollar_amount: parseFloat(amount),
         juice: parseInt(juice, 10),
+        lean_taken: side,
         sportsbook: book || null,
         notes: notes || null,
       };
@@ -1323,6 +1333,23 @@ function BetModal({ edge, existing, onSave, onDelete, onClose }) {
           <button type="button" className="bet-modal-close" onClick={onClose}>\u00d7</button>
         </div>
         <div className="bet-modal-edge">{description}</div>
+
+        <div className="bet-field">
+          <span>Side {isFade && <span className="fade-warn">(fading model)</span>}</span>
+          <div className="bet-side-toggle">
+            {sideOptions.map(opt => (
+              <button
+                key={opt}
+                type="button"
+                className={`bet-side-btn ${side === opt ? 'active' : ''} ${opt === edge.lean ? 'model-side' : 'fade-side'}`}
+                onClick={() => setSide(opt)}
+              >
+                {opt}
+                {opt === edge.lean && <span className="bet-side-tag">Model</span>}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <label className="bet-field">
           <span>$ Amount</span>
@@ -1453,7 +1480,7 @@ function MyRecordView() {
             <table className="my-record-table">
               <thead>
                 <tr>
-                  <th>Date</th><th>Game</th><th>Bet</th>
+                  <th>Date</th><th>Game</th><th>Bet (side)</th>
                   <th className="num">Stake</th><th className="num">Juice</th>
                   <th>Book</th><th>Result</th><th className="num">P&L</th>
                 </tr>

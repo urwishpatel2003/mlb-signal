@@ -1390,6 +1390,7 @@ def list_personal_bets():
     """All personal bets joined with edge details + grading result."""
     rows = db.fetchall("""
         SELECT pb.bet_id, pb.edge_id, pb.dollar_amount, pb.juice,
+               pb.lean_taken,
                pb.sportsbook, pb.notes,
                pb.placed_at::text AS placed_at,
                pb.updated_at::text AS updated_at,
@@ -1410,8 +1411,17 @@ def list_personal_bets():
     bets = []
     for r in rows:
         d = dict(r)
-        # Compute $ P&L from juice + result + stake
+        # The grader's `result` is computed for the EDGE'S lean.
+        # If the user took the same side, that result applies directly.
+        # If the user FADED the edge (took opposite), invert WIN <-> LOSS.
         result = d.get("result")
+        edge_lean = d.get("lean")
+        lean_taken = d.get("lean_taken") or edge_lean    # fallback if NULL
+        if result == "WIN" and lean_taken != edge_lean:  result = "LOSS"
+        elif result == "LOSS" and lean_taken != edge_lean: result = "WIN"
+        # PUSH and None stay the same regardless of side taken
+        d["user_result"] = result   # this is the per-USER result
+        # Compute $ P&L from juice + user_result + stake
         juice  = int(d["juice"]) if d.get("juice") is not None else -110
         stake  = float(d["dollar_amount"])
         payout = None
@@ -1425,6 +1435,7 @@ def list_personal_bets():
         elif result == "PUSH":
             payout = 0.0
         d["dollar_pnl"] = round(payout, 2) if payout is not None else None
+        d["is_fade"] = bool(lean_taken and edge_lean and lean_taken != edge_lean)
         bets.append(d)
     return {"n": len(bets), "bets": bets}
 
@@ -1435,6 +1446,7 @@ class _PersonalBetIn(_BaseModel):
     edge_id: int
     dollar_amount: float
     juice: int
+    lean_taken: str            # which side the user actually bet (OVER/UNDER/team code)
     sportsbook: str | None = None
     notes: str | None = None
 
@@ -1448,15 +1460,15 @@ def upsert_personal_bet(bet: _PersonalBetIn):
     if existing:
         db.execute("""
             UPDATE personal_bets
-            SET dollar_amount=%s, juice=%s, sportsbook=%s, notes=%s, updated_at=now()
+            SET dollar_amount=%s, juice=%s, lean_taken=%s, sportsbook=%s, notes=%s, updated_at=now()
             WHERE bet_id=%s
-        """, (bet.dollar_amount, bet.juice, bet.sportsbook, bet.notes, existing["bet_id"]))
+        """, (bet.dollar_amount, bet.juice, bet.lean_taken, bet.sportsbook, bet.notes, existing["bet_id"]))
         return {"bet_id": existing["bet_id"], "action": "updated"}
     row = db.fetchone("""
-        INSERT INTO personal_bets (edge_id, dollar_amount, juice, sportsbook, notes)
-        VALUES (%s, %s, %s, %s, %s)
+        INSERT INTO personal_bets (edge_id, dollar_amount, juice, lean_taken, sportsbook, notes)
+        VALUES (%s, %s, %s, %s, %s, %s)
         RETURNING bet_id
-    """, (bet.edge_id, bet.dollar_amount, bet.juice, bet.sportsbook, bet.notes))
+    """, (bet.edge_id, bet.dollar_amount, bet.juice, bet.lean_taken, bet.sportsbook, bet.notes))
     return {"bet_id": int(row["bet_id"]), "action": "created"}
 
 
@@ -1489,9 +1501,10 @@ def personal_bets_summary():
             continue
         day["pnl"] += float(b["dollar_pnl"])
         cumulative_pnl += float(b["dollar_pnl"])
-        if b["result"] == "WIN":   day["wins"] += 1;   wins += 1
-        if b["result"] == "LOSS":  day["losses"] += 1; losses += 1
-        if b["result"] == "PUSH":  day["pushes"] += 1; pushes += 1
+        ur = b.get("user_result")
+        if ur == "WIN":   day["wins"] += 1;   wins += 1
+        if ur == "LOSS":  day["losses"] += 1; losses += 1
+        if ur == "PUSH":  day["pushes"] += 1; pushes += 1
     days = sorted(by_date.values(), key=lambda x: x["run_date"], reverse=True)
     # Round
     for d in days:
