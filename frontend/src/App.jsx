@@ -355,6 +355,7 @@ function F5Row({ edge }) {
           : <span className="conv-na">n/a</span>}
         <ReasonToggle open={open} onClick={()=>setOpen(!open)} hasFactors={hasFactors} />
       </div>
+      <div className="cell-bet"><BetButton edge={edge}/></div>
     </div>
     {open && hasFactors && <ReasonDetail factors={edge.reason_factors} />}
     </>
@@ -425,6 +426,7 @@ function MLRow({ edge }) {
         <span className="tier-pill">T{tier}</span>
         <ReasonToggle open={open} onClick={()=>setOpen(!open)} hasFactors={hasFactors} />
       </div>
+      <div className="cell-bet"><BetButton edge={edge}/></div>
     </div>
     {open && hasFactors && <ReasonDetail factors={edge.reason_factors} />}
     </>
