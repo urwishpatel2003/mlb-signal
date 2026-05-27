@@ -1329,3 +1329,55 @@ def admin_cleanup_dedup(token: str, date: str = None):
         summary.append({"date": d, "edges_unflagged": n})
     return {"dates_processed": len(summary), "details": summary}
 
+
+@app.get("/api/admin/cleanup_orphan_results/{token}")
+def cleanup_orphan_results(token: str, dry_run: bool = False):
+    """Delete edge_results rows belonging to unflagged edges.
+
+    When dedup unflags duplicate edges (kind='total' vs 'f5' on same game),
+    their previously-graded results stay in edge_results and pollute track
+    record stats. This drops those orphans and resets model_performance so
+    the grader can recompute rolling sums cleanly.
+
+    ?dry_run=true returns the counts without modifying anything.
+    """
+    _check_admin(token)
+
+    counts = db.fetchone("""
+        SELECT
+          COUNT(*)                                       AS n_orphans,
+          COUNT(*) FILTER (WHERE e.kind = 'total')       AS n_total,
+          COUNT(*) FILTER (WHERE e.kind = 'f5')          AS n_f5,
+          COUNT(*) FILTER (WHERE e.kind = 'ml')          AS n_ml,
+          COUNT(*) FILTER (WHERE e.kind = 'prop')        AS n_prop,
+          COALESCE(SUM(er.profit_units), 0)::float       AS profit_units_removed
+        FROM edge_results er
+        JOIN edges e ON e.edge_id = er.edge_id
+        WHERE e.flagged = FALSE
+    """)
+
+    result = {
+        "n_orphans": int(counts["n_orphans"] or 0),
+        "by_kind": {
+            "total": int(counts["n_total"] or 0),
+            "f5":    int(counts["n_f5"] or 0),
+            "ml":    int(counts["n_ml"] or 0),
+            "prop":  int(counts["n_prop"] or 0),
+        },
+        "profit_units_removed": round(float(counts["profit_units_removed"] or 0), 2),
+        "dry_run": dry_run,
+    }
+
+    if dry_run or result["n_orphans"] == 0:
+        return result
+
+    db.execute("""
+        DELETE FROM edge_results er
+        USING edges e
+        WHERE er.edge_id = e.edge_id AND e.flagged = FALSE
+    """)
+    db.execute("DELETE FROM model_performance")
+    result["model_performance_cleared"] = True
+    result["note"] = "Next grader run will rebuild rolling performance from clean data"
+    return result
+
