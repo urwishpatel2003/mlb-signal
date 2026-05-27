@@ -2257,3 +2257,103 @@ html, body {
 .result-win   { color: #2c5f24; font-weight: 700; }
 .result-loss  { color: #7a2418; font-weight: 700; }
 .result-push  { color: var(--ink-2, #555); }
+
+
+/* ============================================================================
+   Bet column wiring — adds 80px column to existing edge tables
+   ============================================================================ */
+/* Full game + props (EdgeRow): add a 7th column */
+.edges-thead,
+.edge-row {
+  grid-template-columns:
+    minmax(160px, 1.6fr)
+    minmax(110px, 1fr)
+    70px
+    90px
+    90px
+    minmax(120px, 1fr)
+    90px;
+}
+
+/* F5 (F5Row): add a 7th column */
+.edges-thead.f5-thead,
+.edge-row.f5-row {
+  grid-template-columns:
+    minmax(160px, 1.6fr)
+    80px
+    90px
+    90px
+    80px
+    minmax(120px, 1fr)
+    90px;
+}
+
+/* ML: add an 8th column */
+.ml-thead,
+.ml-row {
+  grid-template-columns:
+    minmax(160px, 1.6fr)
+    minmax(100px, 1fr)
+    80px
+    100px
+    80px
+    80px
+    60px
+    90px;
+}
+
+.th-bet {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  font-weight: 700;
+  text-align: center;
+}
+.cell-bet {
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Mobile: Bet button below conviction on small screens */
+@media (max-width: 900px) {
+  .edges-thead,
+  .edge-row {
+    grid-template-columns:
+      minmax(140px, 1.4fr)
+      minmax(100px, 1fr)
+      60px
+      70px
+      80px
+      100px
+      80px;
+  }
+}
+
+@media (max-width: 640px) {
+  .edge-row {
+    grid-template-columns: 1fr auto auto;
+    grid-template-areas:
+      "subject conv bet"
+      "market  pick bet"
+      "line    proj bet";
+  }
+  .cell-bet { grid-area: bet; align-self: center; }
+
+  .edge-row.f5-row {
+    grid-template-areas:
+      "subject conv bet"
+      "line    pick bet"
+      "proj    edge bet";
+  }
+
+  .ml-row {
+    grid-template-areas:
+      "subject pick bet"
+      "odds    model bet"
+      "implied edge tier";
+  }
+}
