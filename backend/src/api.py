@@ -82,6 +82,44 @@ def slate_for_date(slate_date: str):
     return _slate_for_date(slate_date)
 
 
+def _dedupe_totals_in_slate(edges: list) -> list:
+    """Collapse Total + F5 edges on the same game down to one.
+
+    Mirrors dedupe_totals_per_game in the orchestrator but operates on the
+    merged cross-run edge list returned by the slate endpoint. Without this,
+    edges from different runs (e.g. line_watcher at 11:00 firing a Total,
+    then 14:00 firing an F5) both survive the DISTINCT ON in the slate SQL.
+
+    Per game: if both a 'total' and an 'f5' edge are present and BOTH flagged,
+    keep only the one with larger absolute edge. Direction doesn't matter.
+    ML and prop edges pass through unchanged.
+    """
+    by_game = {}
+    for e in edges:
+        if e.get("kind") not in ("total", "f5"):
+            continue
+        if not e.get("flagged"):
+            continue
+        by_game.setdefault(e["game_pk"], []).append(e)
+
+    drop_ids = set()
+    for gp, game_totals in by_game.items():
+        if len(game_totals) < 2:
+            continue
+        # In a per-game list there can be at most one total and one f5
+        # (DISTINCT ON in slate query already collapses duplicates within
+        # the same (game, kind) key)
+        total_e = next((e for e in game_totals if e["kind"] == "total"), None)
+        f5_e    = next((e for e in game_totals if e["kind"] == "f5"), None)
+        if not total_e or not f5_e:
+            continue
+        keep = total_e if abs(float(total_e.get("edge") or 0)) >= abs(float(f5_e.get("edge") or 0)) else f5_e
+        drop = f5_e if keep is total_e else total_e
+        drop_ids.add(drop.get("edge_id"))
+
+    return [e for e in edges if e.get("edge_id") not in drop_ids]
+
+
 def _slate_for_date(slate_date: str) -> dict:
     run = db.fetchone(
         """
@@ -133,11 +171,13 @@ def _slate_for_date(slate_date: str) -> dict:
         """,
         (slate_date,),
     )
+    edge_dicts = [dict(e) for e in edges]
+    edge_dicts = _dedupe_totals_in_slate(edge_dicts)
     return {
         "date": slate_date,
         "run": dict(run),
         "games": [dict(g) for g in games_raw],
-        "edges": [dict(e) for e in edges],
+        "edges": edge_dicts,
         "projections": [dict(p) for p in projs],
     }
 
