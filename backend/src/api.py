@@ -118,7 +118,7 @@ def _slate_for_date(slate_date: str) -> dict:
                e.*
         FROM edges e
         JOIN projection_runs pr ON pr.run_id = e.run_id
-        WHERE pr.run_date = %s
+        WHERE pr.run_date = %s AND e.flagged = TRUE
         ORDER BY e.game_pk, e.kind, e.category, COALESCE(e.pitcher_mlb_id, 0), e.lean, e.run_id DESC
         """,
         (slate_date,),
