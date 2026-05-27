@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
-const ADMIN_PASSWORD = 'Reddevils2003@';
 const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN || '';
 
 
@@ -48,6 +47,7 @@ function fmtRate(w,l){ const d=w+l; return d>0?Math.round(w/d*100)+'%':'--'; }
 // ============================================================================
 export default function App() {
   const [tab, setTab]     = useState('Games');
+  const [adminVisible, setAdminVisible] = useState(false);
   const [slate, setSlate] = useState(null);
   const [perf, setPerf]   = useState(null);
   const [loading, setLoading] = useState(true);
@@ -86,7 +86,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <Masthead slate={slate} />
+      <Masthead slate={slate} onTripleClick={()=>setAdminVisible(v=>!v)} />
       <nav className="tabs">
         {TABS.map(t => {
           let count = '';
@@ -117,7 +117,7 @@ export default function App() {
           {tab==='Track Record'  && <PerformanceView perf={perf} />}
         </>
       )}
-      <AdminPanel />
+      <AdminPanelV2 visible={adminVisible} onClose={()=>setAdminVisible(false)} />
       <footer className="footer">
         <span>QuAInt MLB Signal &middot; Vol II</span>
         <span>Manual review required &middot; Not financial advice</span>
@@ -129,16 +129,28 @@ export default function App() {
 // ============================================================================
 // Masthead
 // ============================================================================
-function Masthead({ slate }) {
+function Masthead({ slate, onTripleClick }) {
   const today   = new Date();
   const dateStr = today.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
   const nGames  = slate?.games?.length ?? 0;
   const nEdges  = (slate?.edges ?? []).length;
   const runId   = slate?.run?.run_id;
+  const clicksRef = React.useRef({ count: 0, timer: null });
+  function handleTitleClick() {
+    if (!onTripleClick) return;
+    clicksRef.current.count += 1;
+    if (clicksRef.current.timer) clearTimeout(clicksRef.current.timer);
+    if (clicksRef.current.count >= 3) {
+      onTripleClick();
+      clicksRef.current.count = 0;
+    } else {
+      clicksRef.current.timer = setTimeout(() => { clicksRef.current.count = 0; }, 600);
+    }
+  }
   return (
     <header className="masthead">
       <div className="masthead-top"><span>QuAInt &middot; MLB Edition</span><span>{dateStr.toUpperCase()}</span></div>
-      <h1>The <span className="em">Signal</span>.</h1>
+      <h1 onClick={handleTitleClick} style={{cursor: 'pointer', userSelect: 'none'}}>The <span className="em">Signal</span>.</h1>
       <div className="masthead-sub">
         <div className="meta"><span>{nGames} GAMES</span><span>{nEdges} EDGES</span></div>
         <span>RUN #{runId ?? '-'}</span>
@@ -1095,106 +1107,102 @@ function TeamStatsTable({ rows }) {
 }
 
 // ============================================================================
-// Admin panel — password-gated trigger buttons for orchestrator/statcast/grader
+// Admin panel v2 — triple-click masthead to reveal; combines triggers + diag
+// No password. Hidden by obscurity. ADMIN_TOKEN env var still required.
 // ============================================================================
-function AdminPanel() {
-  const [unlocked, setUnlocked] = useState(false);
-  const [pwInput, setPwInput]   = useState('');
-  const [status, setStatus]     = useState({});  // { jobName: { state, message } }
+const ADMIN_TRIGGERS = [
+  { name: 'Orchestrator',         endpoint: '/api/admin/trigger/orchestrator',         desc: 'Re-run today\'s slate projection + edges' },
+  { name: 'Statcast Refresh',     endpoint: '/api/admin/trigger/statcast',             desc: 'Refresh hitter/pitcher/team xstats' },
+  { name: 'Grader',               endpoint: '/api/admin/trigger/grader',               desc: 'Grade yesterday\'s flagged edges' },
+];
 
-  function tryUnlock(e) {
-    e.preventDefault();
-    if (pwInput === ADMIN_PASSWORD) {
-      setUnlocked(true);
-      setPwInput('');
-    } else {
-      alert('Incorrect password');
-      setPwInput('');
-    }
-  }
+const ADMIN_DIAGNOSTICS = [
+  { name: 'Index',                endpoint: '/api/admin/diag/index',                   desc: 'List of all diagnostic endpoints' },
+  { name: 'xstats',               endpoint: '/api/admin/diag/xstats',                  desc: 'xstats table state + LEAGUE_XWOBA + last refresh' },
+  { name: 'Projection Bias',      endpoint: '/api/admin/diag/projection_bias',         desc: '14-day projection vs market drift' },
+  { name: 'Edges (today)',        endpoint: '/api/admin/diag/edges',                   desc: 'Flagged edges by kind/lean for today' },
+  { name: 'Games (today)',        endpoint: '/api/admin/diag/games',                   desc: 'Games + projections + F5 cols' },
+  { name: 'Pitcher Projections',  endpoint: '/api/admin/diag/pitcher_projections',     desc: '14-day pitcher projection summary' },
+  { name: 'Weather Check',        endpoint: '/api/admin/diag/weather_check',           desc: 'Weather vs projection bias' },
+  { name: 'Jobs',                 endpoint: '/api/admin/diag/jobs',                    desc: 'Recent job_runs entries' },
+  { name: 'Hitter Distribution',  endpoint: '/api/admin/diag/hitter_dist',             desc: 'Hitter xstats summary' },
+  { name: 'Top Hitters',          endpoint: '/api/admin/diag/hitters_top',             desc: 'Top 30 hitters by xwOBA' },
+  { name: 'Bottom Hitters',       endpoint: '/api/admin/diag/hitters_bottom',          desc: 'Bottom 30 hitters' },
+  { name: 'Team Bullpens',        endpoint: '/api/admin/diag/team_bullpens',           desc: 'All teams bullpen ERA + L7' },
+  { name: 'Pitcher Distribution', endpoint: '/api/admin/diag/pitcher_dist',            desc: 'Pitcher xstats summary' },
+  { name: 'Savant Pitcher CSV',   endpoint: '/api/admin/diag/savant_pitcher_csv',      desc: 'Inspect raw Savant CSV columns' },
+];
 
-  async function runJob(jobName, endpoint) {
-    const pw = window.prompt(`Confirm password to run ${jobName}:`);
-    if (pw === null) return;  // cancel
-    if (pw !== ADMIN_PASSWORD) {
-      alert('Incorrect password — job not triggered');
-      return;
-    }
+const ADMIN_MISC = [
+  { name: 'Recompute Reasoning',  endpoint: '/api/admin/recompute_reasoning',          desc: 'Re-run reasoning for today\'s edges' },
+  { name: 'Zero Prop Units',      endpoint: '/api/admin/zero_prop_units',               desc: 'Set profit_units=0 for prop edges' },
+];
+
+function AdminPanelV2({ visible, onClose }) {
+  const [results, setResults] = useState({});  // { endpoint: { state, data } }
+
+  async function call(endpoint, name) {
     if (!ADMIN_TOKEN) {
-      alert('ADMIN_TOKEN env var not set on frontend — cannot trigger jobs. Set VITE_ADMIN_TOKEN in your build env.');
+      setResults(r => ({ ...r, [endpoint]: { state: 'error', data: 'ADMIN_TOKEN env var missing (VITE_ADMIN_TOKEN)' }}));
       return;
     }
-
-    setStatus(s => ({ ...s, [jobName]: { state: 'running', message: 'Running...' }}));
+    setResults(r => ({ ...r, [endpoint]: { state: 'running', data: 'Calling...' }}));
     try {
       const url = `${API_BASE}${endpoint}/${ADMIN_TOKEN}`;
       const r = await fetch(url);
+      const text = await r.text();
+      let parsed;
+      try { parsed = JSON.parse(text); } catch { parsed = text; }
       if (!r.ok) {
-        const txt = await r.text();
-        setStatus(s => ({ ...s, [jobName]: { state: 'error', message: `HTTP ${r.status}: ${txt.slice(0,160)}` }}));
+        setResults(s => ({ ...s, [endpoint]: { state: 'error', data: parsed }}));
         return;
       }
-      const data = await r.json();
-      const summary = data.metrics
-        ? `Ok: ${JSON.stringify(data.metrics).slice(0, 200)}`
-        : data.result
-          ? `Ok: ${JSON.stringify(data.result).slice(0, 200)}`
-          : `Ok: ${JSON.stringify(data).slice(0, 200)}`;
-      setStatus(s => ({ ...s, [jobName]: { state: 'success', message: summary }}));
+      setResults(s => ({ ...s, [endpoint]: { state: 'success', data: parsed }}));
     } catch (err) {
-      setStatus(s => ({ ...s, [jobName]: { state: 'error', message: err.message }}));
+      setResults(s => ({ ...s, [endpoint]: { state: 'error', data: err.message }}));
     }
   }
 
-  if (!unlocked) {
-    return (
-      <div className="admin-panel admin-locked">
-        <form className="admin-unlock" onSubmit={tryUnlock}>
-          <span className="admin-label">Admin</span>
-          <input
-            type="password"
-            placeholder="Password"
-            value={pwInput}
-            onChange={e => setPwInput(e.target.value)}
-            className="admin-pw-input"
-          />
-          <button type="submit" className="admin-unlock-btn">Unlock</button>
-        </form>
-      </div>
-    );
-  }
-
-  const jobs = [
-    { name: 'Orchestrator', endpoint: '/api/admin/trigger/orchestrator', desc: 'Re-run today\'s slate projection + edges' },
-    { name: 'Statcast',     endpoint: '/api/admin/trigger/statcast',     desc: 'Refresh hitter/pitcher/team xstats from Savant' },
-    { name: 'Grader',       endpoint: '/api/admin/trigger/grader',       desc: 'Grade yesterday\'s flagged edges' },
-  ];
+  if (!visible) return null;
 
   return (
-    <div className="admin-panel admin-unlocked">
-      <div className="admin-header">
-        <span className="admin-label">Admin</span>
-        <button className="admin-lock-btn" onClick={() => setUnlocked(false)}>Lock</button>
+    <div className="admin-v2">
+      <div className="admin-v2-header">
+        <span className="admin-v2-title">Admin</span>
+        <button className="admin-v2-close" onClick={onClose}>Close</button>
       </div>
-      <div className="admin-buttons">
-        {jobs.map(job => {
-          const st = status[job.name] || {};
+
+      <AdminGroup label="Triggers" items={ADMIN_TRIGGERS} results={results} onCall={call} note="These take 30-90s to complete." />
+      <AdminGroup label="Diagnostics" items={ADMIN_DIAGNOSTICS} results={results} onCall={call} />
+      <AdminGroup label="Misc" items={ADMIN_MISC} results={results} onCall={call} />
+    </div>
+  );
+}
+
+function AdminGroup({ label, items, results, onCall, note }) {
+  return (
+    <div className="admin-group">
+      <h3 className="admin-group-label">{label}</h3>
+      {note && <p className="admin-group-note">{note}</p>}
+      <div className="admin-group-list">
+        {items.map(item => {
+          const res = results[item.endpoint];
           return (
-            <div key={job.name} className="admin-job">
-              <div className="admin-job-head">
+            <div key={item.endpoint} className="admin-item">
+              <div className="admin-item-row">
                 <button
-                  className={`admin-trigger-btn admin-state-${st.state || 'idle'}`}
-                  onClick={() => runJob(job.name, job.endpoint)}
-                  disabled={st.state === 'running'}
+                  className={`admin-item-btn admin-state-${res?.state || 'idle'}`}
+                  onClick={() => onCall(item.endpoint, item.name)}
+                  disabled={res?.state === 'running'}
                 >
-                  {st.state === 'running' ? 'Running...' : `Run ${job.name}`}
+                  {res?.state === 'running' ? '...' : item.name}
                 </button>
-                <span className="admin-job-desc">{job.desc}</span>
+                <span className="admin-item-desc">{item.desc}</span>
               </div>
-              {st.message && (
-                <div className={`admin-job-status admin-state-${st.state}`}>
-                  {st.message}
-                </div>
+              {res?.data !== undefined && (
+                <pre className={`admin-item-output admin-state-${res.state}`}>
+                  {typeof res.data === 'string' ? res.data : JSON.stringify(res.data, null, 2)}
+                </pre>
               )}
             </div>
           );
