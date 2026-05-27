@@ -62,19 +62,17 @@ def confidence_tier(edge,proj=None):
 
 def dedupe_totals_per_game(edges_for_game: list[dict]) -> list[dict]:
     """
-    For totals only: collapse the full-game total + F5 total down to one edge
-    when they lean the same direction. Larger |edge| wins.
+    For totals only: keep at most ONE total edge per game (full-game OR F5).
+    Larger |edge| wins regardless of direction. Updated 2026-05-26 to dedup
+    opposite-direction picks too — we never want two total bets on the same
+    game going in contradictory directions.
 
-    Conflict case (different leans) -> keep both.
     ML, prop, and any non-total edges pass through unchanged.
     """
     total_edge = next((e for e in edges_for_game if e.get("kind") == "total"), None)
     f5_edge    = next((e for e in edges_for_game if e.get("kind") == "f5"), None)
 
     if not total_edge or not f5_edge:
-        return edges_for_game
-
-    if total_edge.get("lean") != f5_edge.get("lean"):
         return edges_for_game
 
     keep = total_edge if abs(total_edge["edge"]) >= abs(f5_edge["edge"]) else f5_edge
