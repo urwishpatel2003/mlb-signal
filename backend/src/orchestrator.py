@@ -81,6 +81,61 @@ def dedupe_totals_per_game(edges_for_game: list[dict]) -> list[dict]:
     return [e for e in edges_for_game if id(e) != drop_id]
 
 
+
+
+def _persistent_cross_run_dedup(run_date_str: str) -> int:
+    """
+    Look at ALL flagged total/f5 edges for run_date_str across all runs.
+    For each game_pk that has both kinds flagged, keep the one with the
+    larger absolute edge and set flagged=FALSE on the other.
+
+    Returns count of edges unflagged.
+
+    Idempotent — safe to run multiple times. The grader skips
+    flagged=FALSE edges, so this guarantees display and grading agree.
+    """
+    rows = db.fetchall(
+        """
+        SELECT e.edge_id, e.game_pk, e.kind, e.edge, e.lean
+        FROM edges e
+        JOIN projection_runs pr ON pr.run_id = e.run_id
+        WHERE pr.run_date = %s
+          AND e.flagged = TRUE
+          AND e.kind IN ('total', 'f5')
+        """,
+        (run_date_str,),
+    )
+    by_game = {}
+    for r in rows:
+        by_game.setdefault(r["game_pk"], []).append(r)
+
+    drop_ids = []
+    for gp, edges_list in by_game.items():
+        has_total = any(e["kind"] == "total" for e in edges_list)
+        has_f5    = any(e["kind"] == "f5"    for e in edges_list)
+        if not (has_total and has_f5):
+            continue
+        # Within each kind, take the largest |edge| (in case of duplicates)
+        best_total = max((e for e in edges_list if e["kind"] == "total"),
+                         key=lambda e: abs(float(e["edge"] or 0)))
+        best_f5    = max((e for e in edges_list if e["kind"] == "f5"),
+                         key=lambda e: abs(float(e["edge"] or 0)))
+        keep_id = best_total["edge_id"] if abs(float(best_total["edge"])) >= abs(float(best_f5["edge"])) else best_f5["edge_id"]
+        # Drop every edge in this game's total/f5 list except keep_id
+        for e in edges_list:
+            if e["edge_id"] != keep_id:
+                drop_ids.append(e["edge_id"])
+
+    if drop_ids:
+        db.execute(
+            "UPDATE edges SET flagged = FALSE WHERE edge_id = ANY(%s)",
+            (drop_ids,),
+        )
+        log.info("Cross-run dedup: unflagged %d duplicate total/f5 edges for %s",
+                 len(drop_ids), run_date_str)
+    return len(drop_ids)
+
+
 def compute_edges_for_game(*,game_pk,game,away_proj,home_proj,
     market_total,market_f5_total,away_ml,home_ml,
     full_total,f5_total,home_runs,away_runs,home_win_prob,away_win_prob,
@@ -330,6 +385,23 @@ def run(trigger="manual"):
                     e["reason_short"] = None
                     e["reason_factors"] = None
                 db.insert_edge(run_id,e); all_edges.append(e)
+        # Cross-run dedup: if line_watcher created an f5 on a game where
+        # morning already had a total (or vice-versa), unflag the smaller
+        # so display and grading agree.
+        try:
+            n_unflagged = _persistent_cross_run_dedup(run_date)
+            if n_unflagged:
+                # Remove unflagged edges from all_edges so the notification
+                # and metrics match what's actually flagged in the DB.
+                kept = db.fetchall(
+                    "SELECT edge_id FROM edges WHERE run_id=%s AND flagged=TRUE",
+                    (run_id,),
+                )
+                kept_ids = {r["edge_id"] for r in kept}
+                all_edges = [e for e in all_edges if e.get("edge_id") in kept_ids or e.get("edge_id") is None]
+                metrics["n_unflagged_cross_run"] = n_unflagged
+        except Exception as _e:
+            log.warning("cross-run dedup failed: %s", _e)
         all_edges.sort(key=lambda x:abs(x["edge"]),reverse=True)
         metrics.update({"n_edges":len(all_edges),
             "n_f5_edges":sum(1 for e in all_edges if e["kind"]=="f5"),

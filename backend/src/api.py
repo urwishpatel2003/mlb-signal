@@ -82,44 +82,6 @@ def slate_for_date(slate_date: str):
     return _slate_for_date(slate_date)
 
 
-def _dedupe_totals_in_slate(edges: list) -> list:
-    """Collapse Total + F5 edges on the same game down to one.
-
-    Mirrors dedupe_totals_per_game in the orchestrator but operates on the
-    merged cross-run edge list returned by the slate endpoint. Without this,
-    edges from different runs (e.g. line_watcher at 11:00 firing a Total,
-    then 14:00 firing an F5) both survive the DISTINCT ON in the slate SQL.
-
-    Per game: if both a 'total' and an 'f5' edge are present and BOTH flagged,
-    keep only the one with larger absolute edge. Direction doesn't matter.
-    ML and prop edges pass through unchanged.
-    """
-    by_game = {}
-    for e in edges:
-        if e.get("kind") not in ("total", "f5"):
-            continue
-        if not e.get("flagged"):
-            continue
-        by_game.setdefault(e["game_pk"], []).append(e)
-
-    drop_ids = set()
-    for gp, game_totals in by_game.items():
-        if len(game_totals) < 2:
-            continue
-        # In a per-game list there can be at most one total and one f5
-        # (DISTINCT ON in slate query already collapses duplicates within
-        # the same (game, kind) key)
-        total_e = next((e for e in game_totals if e["kind"] == "total"), None)
-        f5_e    = next((e for e in game_totals if e["kind"] == "f5"), None)
-        if not total_e or not f5_e:
-            continue
-        keep = total_e if abs(float(total_e.get("edge") or 0)) >= abs(float(f5_e.get("edge") or 0)) else f5_e
-        drop = f5_e if keep is total_e else total_e
-        drop_ids.add(drop.get("edge_id"))
-
-    return [e for e in edges if e.get("edge_id") not in drop_ids]
-
-
 def _slate_for_date(slate_date: str) -> dict:
     run = db.fetchone(
         """
@@ -171,13 +133,11 @@ def _slate_for_date(slate_date: str) -> dict:
         """,
         (slate_date,),
     )
-    edge_dicts = [dict(e) for e in edges]
-    edge_dicts = _dedupe_totals_in_slate(edge_dicts)
     return {
         "date": slate_date,
         "run": dict(run),
         "games": [dict(g) for g in games_raw],
-        "edges": edge_dicts,
+        "edges": [dict(e) for e in edges],
         "projections": [dict(p) for p in projs],
     }
 
@@ -1331,4 +1291,41 @@ def diag_savant_pitcher_csv(token: str):
         "headers": headers,
         "sample_rows": rows,
     }
+
+
+@app.get("/api/admin/cleanup_dedup/{token}")
+def admin_cleanup_dedup(token: str, date: str = None):
+    """Retroactively run cross-run total/f5 dedup for a date (or all dates).
+
+    For each game on the date that has both a flagged total and flagged f5
+    edge, keep the larger |edge| and unflag the other. Mirrors the
+    cross-run dedup the orchestrator now runs automatically.
+
+    Use ?date=YYYY-MM-DD for a single date, or no params to fix every date
+    with duplicates.
+    """
+    _check_admin(token)
+    from . import orchestrator
+
+    if date:
+        n = orchestrator._persistent_cross_run_dedup(date)
+        return {"date": date, "edges_unflagged": n}
+
+    # No date supplied — find every date with duplicates
+    dates = db.fetchall(
+        """
+        SELECT DISTINCT pr.run_date::text AS d
+        FROM edges e
+        JOIN projection_runs pr ON pr.run_id = e.run_id
+        WHERE e.flagged = TRUE AND e.kind IN ('total','f5')
+        GROUP BY pr.run_date, e.game_pk
+        HAVING COUNT(DISTINCT e.kind) > 1
+        """
+    )
+    summary = []
+    for r in dates:
+        d = r["d"]
+        n = orchestrator._persistent_cross_run_dedup(d)
+        summary.append({"date": d, "edges_unflagged": n})
+    return {"dates_processed": len(summary), "details": summary}
 
