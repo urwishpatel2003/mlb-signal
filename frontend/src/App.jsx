@@ -193,6 +193,7 @@ function EdgesView({ edges, kind }) {
           <span>Market</span><span className="num">Line</span>
           <span>Pick</span><span className="num">Projection</span><span>Conviction</span>
           <span className="th-bet">Bet</span>
+          <span className="th-bet">Bet</span>
           <span className="th-reason"></span>
         </div>
         <div className="edges-tbody">
@@ -288,6 +289,7 @@ function EdgeRow({ edge }) {
             </div>}
         <ReasonToggle open={open} onClick={()=>setOpen(!open)} hasFactors={hasFactors} />
       </div>
+      <div className="cell-bet"><BetButton edge={edge}/></div>
     </div>
     {open && hasFactors && <ReasonDetail factors={edge.reason_factors} />}
     </>
@@ -313,6 +315,7 @@ function F5View({ edges, games }) {
           <span>Matchup</span><span className="num">F5 Line</span>
           <span>Pick</span><span className="num">F5 Proj</span>
           <span className="num">Edge</span><span>Conviction</span>
+          <span className="th-bet">Bet</span>
           <span className="th-bet">Bet</span>
           <span className="th-reason"></span>
         </div>
@@ -377,6 +380,7 @@ function MoneylineView({ edges, games }) {
           <span>Matchup</span><span>Pick</span><span className="num">Odds</span>
           <span className="num">Model Win%</span><span className="num">Implied</span>
           <span className="num">Edge</span><span>Tier</span>
+          <span className="th-bet">Bet</span>
           <span className="th-bet">Bet</span>
           <span className="th-reason"></span>
         </div>

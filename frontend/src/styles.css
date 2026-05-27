@@ -2357,3 +2357,74 @@ html, body {
       "implied edge tier";
   }
 }
+
+
+/* ============================================================================
+   Bet column wiring — adds Bet column to existing edge tables
+   ============================================================================ */
+.edges-thead,
+.edge-row {
+  grid-template-columns:
+    minmax(160px, 1.6fr)
+    minmax(110px, 1fr)
+    70px
+    90px
+    90px
+    minmax(120px, 1fr)
+    90px;
+}
+
+.edges-thead.f5-thead,
+.edge-row.f5-row {
+  grid-template-columns:
+    minmax(160px, 1.6fr)
+    80px
+    90px
+    90px
+    80px
+    minmax(120px, 1fr)
+    90px;
+}
+
+.ml-thead,
+.ml-row {
+  grid-template-columns:
+    minmax(160px, 1.6fr)
+    minmax(100px, 1fr)
+    80px
+    100px
+    80px
+    80px
+    60px
+    90px;
+}
+
+.th-bet {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  font-weight: 700;
+  text-align: center;
+}
+.cell-bet {
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 900px) {
+  .edges-thead,
+  .edge-row {
+    grid-template-columns:
+      minmax(140px, 1.4fr)
+      minmax(100px, 1fr)
+      60px
+      70px
+      80px
+      100px
+      80px;
+  }
+}
