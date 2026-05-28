@@ -1020,6 +1020,7 @@ def _refresh_pitcher_fb_pct(season_year: int) -> int:
         try:
             pid      = int(row.get("id") or 0)
             fb_rate  = float(row.get("fb_rate") or 0) / scale
+            gb_rate  = float(row.get("gb_rate") or 0) / scale
             if pid == 0 or fb_rate == 0:
                 continue
             if pid not in existing:
@@ -1051,6 +1052,7 @@ def _refresh_pitcher_fb_pct(season_year: int) -> int:
                 "mlb_id":      pid,
                 "season_year": season_year,
                 "fb_pct":      fb_pct,
+                "gb_pct":      round(gb_rate, 4) if gb_rate > 0 else None,
                 "xfip":        xfip,
             })
         except (ValueError, TypeError) as e:
@@ -1064,6 +1066,7 @@ def _refresh_pitcher_fb_pct(season_year: int) -> int:
     sql = """
         UPDATE pitcher_xstats SET
           fb_pct=%(fb_pct)s,
+          gb_pct=COALESCE(%(gb_pct)s, gb_pct),
           xfip=%(xfip)s,
           refreshed_at=now()
         WHERE mlb_id=%(mlb_id)s AND season_year=%(season_year)s;
