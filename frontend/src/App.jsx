@@ -1099,6 +1099,7 @@ function PitcherStatsTable({ rows }) {
           </span>
         );
       } },
+    { key:'composite',      label:'Score',    align:'num',   type:'number', dp:0,  width:'62px', colorFn:COLORSCORE },
     { key:'pa',              label:'PA',       align:'num',   type:'number', dp:0,  width:'50px' },
     { key:'era',             label:'ERA',      align:'num',   type:'number', dp:2,  width:'55px', colorFn:COLOR.pERA },
     { key:'xera',            label:'xERA',     align:'num',   type:'number', dp:2,  width:'55px', colorFn:COLOR.pERA },
@@ -1116,7 +1117,11 @@ function PitcherStatsTable({ rows }) {
     { key:'__splits',        label:'',         align:'num',   type:'string', width:'68px',
       fmt: (_, row) => <PitcherSplitsToggle row={row}/> },
   ];
-  return <StatsTable rows={rows} columns={columns} defaultSort="pa" defaultDir="desc" />;
+  const scoredRows = rows.map(r => {
+    const c = pitcherComposite(r);
+    return { ...r, composite: c ? c.score : null };
+  });
+  return <StatsTable rows={scoredRows} columns={columns} defaultSort="pa" defaultDir="desc" />;
 }
 
 function PitcherSplitsToggle({ row }) {
@@ -1179,6 +1184,8 @@ function PitcherSplitsPanel({ splits }) {
 // ----------------------------------------------------------------------------
 // Hitter composite (0-100, higher = better hitter). Requires xwOBA + xSLG.
 // ----------------------------------------------------------------------------
+const COLORSCORE = (v) => v == null ? null : (v >= 60 ? 'good' : (v < 42 ? 'bad' : 'mid'));
+
 function hitterComposite(r) {
   if (r.est_woba == null || r.est_slg == null) return null;
   const norm = (v, elite, poor) => {
@@ -1272,6 +1279,7 @@ function HitterStatsTable({ rows }) {
           </span>
         );
       } },
+    { key:'composite', label:'Score',    align:'num',  type:'number', dp:0, width:'62px', colorFn:COLORSCORE },
     { key:'pa',         label:'PA',       align:'num',  type:'number', dp:0, width:'70px' },
     { key:'ba',         label:'BA',       align:'num',  type:'number', fmt:fmt3, width:'80px', colorFn:COLOR.hBA },
     { key:'est_ba',     label:'xBA',      align:'num',  type:'number', fmt:fmt3, width:'80px', colorFn:COLOR.hBA },
@@ -1283,7 +1291,11 @@ function HitterStatsTable({ rows }) {
     { key:'vs_L_woba',  label:'vs LHP',   align:'num',  type:'number', fmt:fmt3, width:'80px', colorFn:COLOR.hWOBA },
     { key:'vs_R_woba',  label:'vs RHP',   align:'num',  type:'number', fmt:fmt3, width:'80px', colorFn:COLOR.hWOBA },
   ];
-  return <StatsTable rows={rows} columns={columns} defaultSort="est_woba" defaultDir="desc" />;
+  const scoredRows = rows.map(r => {
+    const c = hitterComposite(r);
+    return { ...r, composite: c ? c.score : null };
+  });
+  return <StatsTable rows={scoredRows} columns={columns} defaultSort="est_woba" defaultDir="desc" />;
 }
 
 function TeamStatsTable({ rows }) {
@@ -1310,7 +1322,12 @@ function TeamStatsTable({ rows }) {
     { key:'bullpen_era_l7',  label:'BP L7 ERA',    align:'num',  type:'number', dp:2, width:'110px', colorFn:COLOR.tBPERA },
     { key:'bullpen_ip_l7',   label:'BP L7 IP',     align:'num',  type:'number', dp:1, width:'110px' },
   ];
-  return <StatsTable rows={rows} columns={columns} defaultSort="est_woba" defaultDir="desc" />;
+  const scoredRows = rows.map(r => {
+    const off = teamOffenseComposite(r);
+    const bp  = teamBullpenComposite(r);
+    return { ...r, off_score: off ? off.score : null, bp_score: bp ? bp.score : null };
+  });
+  return <StatsTable rows={scoredRows} columns={columns} defaultSort="off_score" defaultDir="desc" />;
 }
 
 // ============================================================================
