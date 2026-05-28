@@ -367,13 +367,14 @@ def performance_by_date():
 
         result = r["result"]
         profit = float(r["profit_units"] or 0)
-        # Tally summary
-        if result == "WIN":  by_date[d]["summary"]["wins"] += 1
-        elif result == "LOSS": by_date[d]["summary"]["losses"] += 1
-        elif result == "PUSH": by_date[d]["summary"]["pushes"] += 1
-        by_date[d]["summary"]["profit_units"] = round(
-            by_date[d]["summary"]["profit_units"] + profit, 2
-        )
+        # Tally summary — props excluded from daily record (tracked in buckets).
+        if r["kind"] != "prop":
+            if result == "WIN":  by_date[d]["summary"]["wins"] += 1
+            elif result == "LOSS": by_date[d]["summary"]["losses"] += 1
+            elif result == "PUSH": by_date[d]["summary"]["pushes"] += 1
+            by_date[d]["summary"]["profit_units"] = round(
+                by_date[d]["summary"]["profit_units"] + profit, 2
+            )
 
         # Bucket by (kind, category, lean)
         # ML edges: lean is team code (e.g. 'WSH') — bucket all ML together
@@ -456,10 +457,13 @@ def performance_overall():
         losses = int(r["losses"] or 0)
         pushes = int(r["pushes"] or 0)
         profit = float(r["profit_units"] or 0)
-        overall["wins"] += wins
-        overall["losses"] += losses
-        overall["pushes"] += pushes
-        overall["profit_units"] = round(overall["profit_units"] + profit, 2)
+        # Props are tracked separately (in by_category) and excluded from the
+        # cumulative all-time record per product decision.
+        if r["kind"] != "prop":
+            overall["wins"] += wins
+            overall["losses"] += losses
+            overall["pushes"] += pushes
+            overall["profit_units"] = round(overall["profit_units"] + profit, 2)
         by_category.append({
             "kind": r["kind"],
             "lean": r["lean"],
