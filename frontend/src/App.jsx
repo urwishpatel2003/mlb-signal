@@ -1315,6 +1315,8 @@ function TeamStatsTable({ rows }) {
           </span>
         );
       } },
+    { key:'off_score',      label:'OFF',          align:'num',  type:'number', dp:0, width:'60px', colorFn:COLORSCORE },
+    { key:'bp_score',       label:'BP',           align:'num',  type:'number', dp:0, width:'60px', colorFn:COLORSCORE },
     { key:'est_woba',        label:'xwOBA',        align:'num',  type:'number', fmt:fmt3, width:'100px', colorFn:COLOR.tWOBA },
     { key:'l5_woba',         label:'L5 wOBA',      align:'num',  type:'number', fmt:fmt3, width:'100px', colorFn:COLOR.tWOBA },
     { key:'bullpen_era',     label:'BP ERA',       align:'num',  type:'number', dp:2, width:'100px', colorFn:COLOR.tBPERA },
