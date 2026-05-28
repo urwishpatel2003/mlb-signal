@@ -2543,3 +2543,19 @@ html, body {
 .composite-good { background: #5b8e52; }
 .composite-mid  { background: #c8a04a; }
 .composite-bad  { background: #b8483a; }
+
+
+/* Team composite badges — OFF (offense) + BP (bullpen) side by side */
+.team-badges {
+  display: inline-flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+/* BP badge: outlined variant so it reads differently from the offense badge */
+.composite-badge.bp-badge {
+  background: transparent !important;
+  border: 1.5px solid;
+}
+.composite-badge.bp-badge.composite-good { color: #5b8e52; border-color: #5b8e52; }
+.composite-badge.bp-badge.composite-mid  { color: #c8a04a; border-color: #c8a04a; }
+.composite-badge.bp-badge.composite-bad  { color: #b8483a; border-color: #b8483a; }

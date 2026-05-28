@@ -1176,9 +1176,102 @@ function PitcherSplitsPanel({ splits }) {
   );
 }
 
+// ----------------------------------------------------------------------------
+// Hitter composite (0-100, higher = better hitter). Requires xwOBA + xSLG.
+// ----------------------------------------------------------------------------
+function hitterComposite(r) {
+  if (r.est_woba == null || r.est_slg == null) return null;
+  const norm = (v, elite, poor) => {
+    if (v == null) return null;
+    const t = (v - poor) / (elite - poor);
+    return Math.max(0, Math.min(100, t * 100));
+  };
+  const parts = [
+    [r.est_woba, 0.400, 0.280, 30],   // xwOBA
+    [r.woba,     0.400, 0.280, 15],   // wOBA
+    [r.est_slg,  0.550, 0.350, 20],   // xSLG
+    [r.slg,      0.550, 0.350, 10],   // SLG
+    [r.est_ba,   0.300, 0.220, 10],   // xBA
+    [r.l15_woba, 0.400, 0.280, 15],   // L15 wOBA
+  ];
+  let wsum = 0, w = 0;
+  for (const [val, elite, poor, weight] of parts) {
+    const n = norm(val, elite, poor);
+    if (n == null) continue;
+    wsum += n * weight; w += weight;
+  }
+  if (w === 0) return null;
+  const score = Math.round(wsum / w);
+  const tier = score >= 60 ? 'good' : (score < 42 ? 'bad' : 'mid');
+  return { score, tier };
+}
+
+// ----------------------------------------------------------------------------
+// Team offense composite (0-100, higher = better offense). Requires xwOBA.
+// ----------------------------------------------------------------------------
+function teamOffenseComposite(r) {
+  if (r.est_woba == null) return null;
+  const norm = (v, elite, poor) => {
+    if (v == null) return null;
+    const t = (v - poor) / (elite - poor);
+    return Math.max(0, Math.min(100, t * 100));
+  };
+  const parts = [
+    [r.est_woba, 0.345, 0.295, 65],   // team xwOBA
+    [r.l5_woba,  0.345, 0.295, 35],   // L5 wOBA (recent form)
+  ];
+  let wsum = 0, w = 0;
+  for (const [val, elite, poor, weight] of parts) {
+    const n = norm(val, elite, poor);
+    if (n == null) continue;
+    wsum += n * weight; w += weight;
+  }
+  if (w === 0) return null;
+  const score = Math.round(wsum / w);
+  const tier = score >= 60 ? 'good' : (score < 42 ? 'bad' : 'mid');
+  return { score, tier };
+}
+
+// ----------------------------------------------------------------------------
+// Team bullpen composite (0-100, higher = better pen). Requires bullpen_era.
+// Lower ERA -> higher score.
+// ----------------------------------------------------------------------------
+function teamBullpenComposite(r) {
+  if (r.bullpen_era == null) return null;
+  const norm = (v, elite, poor) => {
+    if (v == null) return null;
+    const t = (v - poor) / (elite - poor);
+    return Math.max(0, Math.min(100, t * 100));
+  };
+  const parts = [
+    [r.bullpen_era,    3.20, 5.00, 65],   // season BP ERA (low elite)
+    [r.bullpen_era_l7, 3.20, 5.50, 35],   // L7 BP ERA (low elite, noisier)
+  ];
+  let wsum = 0, w = 0;
+  for (const [val, elite, poor, weight] of parts) {
+    const n = norm(val, elite, poor);
+    if (n == null) continue;
+    wsum += n * weight; w += weight;
+  }
+  if (w === 0) return null;
+  const score = Math.round(wsum / w);
+  const tier = score >= 60 ? 'good' : (score < 42 ? 'bad' : 'mid');
+  return { score, tier };
+}
+
 function HitterStatsTable({ rows }) {
   const columns = [
-    { key:'last_first', label:'Hitter',   align:'left', type:'string', width:'minmax(160px, 2fr)' },
+    { key:'last_first', label:'Hitter',   align:'left', type:'string', width:'minmax(180px, 2fr)', sticky:true,
+      rowColorFn: (r) => { const c = hitterComposite(r); return c ? c.tier : null; },
+      fmt: (val, r) => {
+        const c = hitterComposite(r);
+        return (
+          <span className="pitcher-name-cell">
+            <span className="pitcher-name-text">{val}</span>
+            {c && <span className={`composite-badge composite-${c.tier}`}>{c.score}</span>}
+          </span>
+        );
+      } },
     { key:'pa',         label:'PA',       align:'num',  type:'number', dp:0, width:'70px' },
     { key:'ba',         label:'BA',       align:'num',  type:'number', fmt:fmt3, width:'80px', colorFn:COLOR.hBA },
     { key:'est_ba',     label:'xBA',      align:'num',  type:'number', fmt:fmt3, width:'80px', colorFn:COLOR.hBA },
@@ -1195,7 +1288,21 @@ function HitterStatsTable({ rows }) {
 
 function TeamStatsTable({ rows }) {
   const columns = [
-    { key:'team_code',       label:'Team',         align:'left', type:'string', width:'minmax(80px, 1fr)' },
+    { key:'team_code',       label:'Team',         align:'left', type:'string', width:'minmax(150px, 1.4fr)', sticky:true,
+      rowColorFn: (r) => { const c = teamOffenseComposite(r); return c ? c.tier : null; },
+      fmt: (val, r) => {
+        const off = teamOffenseComposite(r);
+        const bp  = teamBullpenComposite(r);
+        return (
+          <span className="pitcher-name-cell">
+            <span className="pitcher-name-text">{val}</span>
+            <span className="team-badges">
+              {off && <span className={`composite-badge composite-${off.tier}`} title="Offense">{off.score}</span>}
+              {bp  && <span className={`composite-badge bp-badge composite-${bp.tier}`} title="Bullpen">{bp.score}</span>}
+            </span>
+          </span>
+        );
+      } },
     { key:'est_woba',        label:'xwOBA',        align:'num',  type:'number', fmt:fmt3, width:'100px', colorFn:COLOR.tWOBA },
     { key:'l5_woba',         label:'L5 wOBA',      align:'num',  type:'number', fmt:fmt3, width:'100px', colorFn:COLOR.tWOBA },
     { key:'bullpen_era',     label:'BP ERA',       align:'num',  type:'number', dp:2, width:'100px', colorFn:COLOR.tBPERA },
