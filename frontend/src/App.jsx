@@ -991,7 +991,8 @@ function StatsTable({ rows, columns, defaultSort, defaultDir='desc', initialSear
                     : (val == null ? '—'
                       : col.type === 'number' ? Number(val).toFixed(col.dp ?? 2)
                       : val));
-                  return <div key={col.key} className={`stats-cell ${col.align||'left'} ${col.sticky?'sticky':''}`}>{display}</div>;
+                  const colorCls = (col.colorFn && val != null) ? ('stat-' + col.colorFn(Number(val))) : '';
+                  return <div key={col.key} className={`stats-cell ${col.align||'left'} ${col.sticky?'sticky':''} ${colorCls}`}>{display}</div>;
                 })}
               </div>
             ))}
@@ -1005,23 +1006,55 @@ const fmt3 = v => v==null ? '—' : Number(v).toFixed(3);
 const fmt2 = v => v==null ? '—' : Number(v).toFixed(2);
 const fmt0 = v => v==null ? '—' : Math.round(Number(v)).toString();
 
+// ----------------------------------------------------------------------------
+// Stat color helpers. Each returns 'good' | 'mid' | 'bad'.
+//   _low  : lower value is better (ERA, contact-against, BABIP)
+//   _high : higher value is better (K%, wOBA for hitters/offense)
+// ----------------------------------------------------------------------------
+const _low  = (v, goodMax, badMin) => v <= goodMax ? 'good' : (v >= badMin ? 'bad' : 'mid');
+const _high = (v, goodMin, badMax) => v >= goodMin ? 'good' : (v <= badMax ? 'bad' : 'mid');
+
+const COLOR = {
+  // --- pitcher (lower is better unless noted) ---
+  pERA:     v => _low(v, 3.50, 4.50),
+  pWOBA:    v => _low(v, 0.300, 0.330),     // xwOBA-against
+  pBABIP:   v => _low(v, 0.280, 0.310),
+  pKpct:    v => _high(v, 0.25, 0.20),      // fraction; higher better
+  pBB9:     v => _low(v, 2.5, 3.5),
+  pGBpct:   v => _high(v, 0.48, 0.42),      // fraction; higher better
+  pFBpct:   v => _low(v, 0.32, 0.40),       // high FB% = HR risk (cautionary)
+  pHRFB:    v => _low(v, 0.10, 0.13),       // fraction
+  pEV:      v => _low(v, 87.0, 89.5),
+  pHard:    v => _low(v, 0.33, 0.40),       // fraction
+  pBarrel:  v => _low(v, 0.06, 0.09),       // fraction
+
+  // --- hitter / offense (higher is better) ---
+  hWOBA:    v => _high(v, 0.350, 0.310),
+  hBA:      v => _high(v, 0.270, 0.240),
+  hSLG:     v => _high(v, 0.450, 0.390),
+  tWOBA:    v => _high(v, 0.330, 0.310),    // team offense
+
+  // --- team bullpen (lower is better) ---
+  tBPERA:   v => _low(v, 3.50, 4.25),
+};
+
 function PitcherStatsTable({ rows }) {
   const fmtPct = v => v==null ? '—' : (Number(v)*100).toFixed(1)+'%';
   const columns = [
     { key:'last_first',      label:'Pitcher',  align:'left',  type:'string', width:'minmax(150px, 1.6fr)', sticky:true },
     { key:'pa',              label:'PA',       align:'num',   type:'number', dp:0,  width:'50px' },
-    { key:'era',             label:'ERA',      align:'num',   type:'number', dp:2,  width:'55px' },
-    { key:'xera',            label:'xERA',     align:'num',   type:'number', dp:2,  width:'55px' },
-    { key:'xfip',            label:'xFIP',     align:'num',   type:'number', dp:2,  width:'55px' },
-    { key:'est_woba',        label:'xwOBA',    align:'num',   type:'number', fmt:fmt3, width:'62px' },
-    { key:'babip',           label:'BABIP',    align:'num',   type:'number', fmt:fmt3, width:'62px' },
-    { key:'k_pct',           label:'K%',       align:'num',   type:'number', fmt:fmtPct, width:'58px' },
-    { key:'bb9',             label:'BB/9',     align:'num',   type:'number', dp:2,  width:'58px' },
-    { key:'gb_pct',          label:'GB%',      align:'num',   type:'number', fmt:fmtPct, width:'58px' },
-    { key:'fb_pct',          label:'FB%',      align:'num',   type:'number', fmt:fmtPct, width:'58px' },
-    { key:'avg_exit_velo',   label:'EV',       align:'num',   type:'number', dp:1,  width:'55px' },
-    { key:'hard_hit_pct',    label:'Hard%',    align:'num',   type:'number', fmt:fmtPct, width:'62px' },
-    { key:'barrel_pct',      label:'Brl%',     align:'num',   type:'number', fmt:fmtPct, width:'58px' },
+    { key:'era',             label:'ERA',      align:'num',   type:'number', dp:2,  width:'55px', colorFn:COLOR.pERA },
+    { key:'xera',            label:'xERA',     align:'num',   type:'number', dp:2,  width:'55px', colorFn:COLOR.pERA },
+    { key:'xfip',            label:'xFIP',     align:'num',   type:'number', dp:2,  width:'55px', colorFn:COLOR.pERA },
+    { key:'est_woba',        label:'xwOBA',    align:'num',   type:'number', fmt:fmt3, width:'62px', colorFn:COLOR.pWOBA },
+    { key:'babip',           label:'BABIP',    align:'num',   type:'number', fmt:fmt3, width:'62px', colorFn:COLOR.pBABIP },
+    { key:'k_pct',           label:'K%',       align:'num',   type:'number', fmt:fmtPct, width:'58px', colorFn:COLOR.pKpct },
+    { key:'bb9',             label:'BB/9',     align:'num',   type:'number', dp:2,  width:'58px', colorFn:COLOR.pBB9 },
+    { key:'gb_pct',          label:'GB%',      align:'num',   type:'number', fmt:fmtPct, width:'58px', colorFn:COLOR.pGBpct },
+    { key:'fb_pct',          label:'FB%',      align:'num',   type:'number', fmt:fmtPct, width:'58px', colorFn:COLOR.pFBpct },
+    { key:'avg_exit_velo',   label:'EV',       align:'num',   type:'number', dp:1,  width:'55px', colorFn:COLOR.pEV },
+    { key:'hard_hit_pct',    label:'Hard%',    align:'num',   type:'number', fmt:fmtPct, width:'62px', colorFn:COLOR.pHard },
+    { key:'barrel_pct',      label:'Brl%',     align:'num',   type:'number', fmt:fmtPct, width:'58px', colorFn:COLOR.pBarrel },
     { key:'launch_angle_avg',label:'LA',       align:'num',   type:'number', dp:1,  width:'50px' },
     { key:'__splits',        label:'',         align:'num',   type:'string', width:'68px',
       fmt: (_, row) => <PitcherSplitsToggle row={row}/> },
@@ -1090,15 +1123,15 @@ function HitterStatsTable({ rows }) {
   const columns = [
     { key:'last_first', label:'Hitter',   align:'left', type:'string', width:'minmax(160px, 2fr)' },
     { key:'pa',         label:'PA',       align:'num',  type:'number', dp:0, width:'70px' },
-    { key:'ba',         label:'BA',       align:'num',  type:'number', fmt:fmt3, width:'80px' },
-    { key:'est_ba',     label:'xBA',      align:'num',  type:'number', fmt:fmt3, width:'80px' },
-    { key:'slg',        label:'SLG',      align:'num',  type:'number', fmt:fmt3, width:'80px' },
-    { key:'est_slg',    label:'xSLG',     align:'num',  type:'number', fmt:fmt3, width:'80px' },
-    { key:'woba',       label:'wOBA',     align:'num',  type:'number', fmt:fmt3, width:'80px' },
-    { key:'est_woba',   label:'xwOBA',    align:'num',  type:'number', fmt:fmt3, width:'80px' },
-    { key:'l15_woba',   label:'L15 wOBA', align:'num',  type:'number', fmt:fmt3, width:'90px' },
-    { key:'vs_L_woba',  label:'vs LHP',   align:'num',  type:'number', fmt:fmt3, width:'80px' },
-    { key:'vs_R_woba',  label:'vs RHP',   align:'num',  type:'number', fmt:fmt3, width:'80px' },
+    { key:'ba',         label:'BA',       align:'num',  type:'number', fmt:fmt3, width:'80px', colorFn:COLOR.hBA },
+    { key:'est_ba',     label:'xBA',      align:'num',  type:'number', fmt:fmt3, width:'80px', colorFn:COLOR.hBA },
+    { key:'slg',        label:'SLG',      align:'num',  type:'number', fmt:fmt3, width:'80px', colorFn:COLOR.hSLG },
+    { key:'est_slg',    label:'xSLG',     align:'num',  type:'number', fmt:fmt3, width:'80px', colorFn:COLOR.hSLG },
+    { key:'woba',       label:'wOBA',     align:'num',  type:'number', fmt:fmt3, width:'80px', colorFn:COLOR.hWOBA },
+    { key:'est_woba',   label:'xwOBA',    align:'num',  type:'number', fmt:fmt3, width:'80px', colorFn:COLOR.hWOBA },
+    { key:'l15_woba',   label:'L15 wOBA', align:'num',  type:'number', fmt:fmt3, width:'90px', colorFn:COLOR.hWOBA },
+    { key:'vs_L_woba',  label:'vs LHP',   align:'num',  type:'number', fmt:fmt3, width:'80px', colorFn:COLOR.hWOBA },
+    { key:'vs_R_woba',  label:'vs RHP',   align:'num',  type:'number', fmt:fmt3, width:'80px', colorFn:COLOR.hWOBA },
   ];
   return <StatsTable rows={rows} columns={columns} defaultSort="est_woba" defaultDir="desc" />;
 }
@@ -1106,11 +1139,11 @@ function HitterStatsTable({ rows }) {
 function TeamStatsTable({ rows }) {
   const columns = [
     { key:'team_code',       label:'Team',         align:'left', type:'string', width:'minmax(80px, 1fr)' },
-    { key:'est_woba',        label:'xwOBA',        align:'num',  type:'number', fmt:fmt3, width:'100px' },
-    { key:'l5_woba',         label:'L5 wOBA',      align:'num',  type:'number', fmt:fmt3, width:'100px' },
-    { key:'bullpen_era',     label:'BP ERA',       align:'num',  type:'number', dp:2, width:'100px' },
+    { key:'est_woba',        label:'xwOBA',        align:'num',  type:'number', fmt:fmt3, width:'100px', colorFn:COLOR.tWOBA },
+    { key:'l5_woba',         label:'L5 wOBA',      align:'num',  type:'number', fmt:fmt3, width:'100px', colorFn:COLOR.tWOBA },
+    { key:'bullpen_era',     label:'BP ERA',       align:'num',  type:'number', dp:2, width:'100px', colorFn:COLOR.tBPERA },
     { key:'bullpen_ip',      label:'BP IP',        align:'num',  type:'number', dp:1, width:'100px' },
-    { key:'bullpen_era_l7',  label:'BP L7 ERA',    align:'num',  type:'number', dp:2, width:'110px' },
+    { key:'bullpen_era_l7',  label:'BP L7 ERA',    align:'num',  type:'number', dp:2, width:'110px', colorFn:COLOR.tBPERA },
     { key:'bullpen_ip_l7',   label:'BP L7 IP',     align:'num',  type:'number', dp:1, width:'110px' },
   ];
   return <StatsTable rows={rows} columns={columns} defaultSort="est_woba" defaultDir="desc" />;

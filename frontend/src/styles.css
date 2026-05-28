@@ -2498,3 +2498,14 @@ html, body {
 .is-fade-row {
   background: rgba(184, 72, 58, 0.04);
 }
+
+
+/* Stat color coding — green good / yellow mid / red bad (subject perspective) */
+.stats-cell.stat-good { background: rgba(91, 142, 82, 0.16); color: #2c5f24; font-weight: 700; }
+.stats-cell.stat-mid  { background: rgba(200, 160, 74, 0.14); color: #6b5212; }
+.stats-cell.stat-bad  { background: rgba(184, 72, 58, 0.14); color: #7a2418; font-weight: 700; }
+.stats-cell.sticky.stat-good,
+.stats-cell.sticky.stat-mid,
+.stats-cell.sticky.stat-bad {
+  background: var(--paper, #fff); color: var(--ink, #111); font-weight: 500;
+}
