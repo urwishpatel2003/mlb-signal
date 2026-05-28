@@ -991,7 +991,11 @@ function StatsTable({ rows, columns, defaultSort, defaultDir='desc', initialSear
                     : (val == null ? '—'
                       : col.type === 'number' ? Number(val).toFixed(col.dp ?? 2)
                       : val));
-                  const colorCls = (col.colorFn && val != null) ? ('stat-' + col.colorFn(Number(val))) : '';
+                  let colorCls = (col.colorFn && val != null) ? ('stat-' + col.colorFn(Number(val))) : '';
+                  if (col.rowColorFn) {
+                    const rc = col.rowColorFn(r);
+                    if (rc) colorCls = 'stat-agg-' + rc;
+                  }
                   return <div key={col.key} className={`stats-cell ${col.align||'left'} ${col.sticky?'sticky':''} ${colorCls}`}>{display}</div>;
                 })}
               </div>
@@ -1038,10 +1042,63 @@ const COLOR = {
   tBPERA:   v => _low(v, 3.50, 4.25),
 };
 
+// ----------------------------------------------------------------------------
+// Pitcher composite quality score (0-100). Higher = better pitcher.
+// Each stat normalized linearly between an "elite" and "poor" anchor, clamped
+// 0-100, then weighted. Requires xERA + xwOBA-against + barrel% to be present.
+// ----------------------------------------------------------------------------
+function pitcherComposite(r) {
+  const need = [r.xera, r.est_woba, r.barrel_pct];
+  if (need.some(v => v == null)) return null;   // not enough data
+
+  // norm: map value to 0-100 where `elite` -> 100, `poor` -> 0.
+  // lowerBetter=true means small values are elite.
+  const norm = (v, elite, poor) => {
+    if (v == null) return null;
+    const t = (v - poor) / (elite - poor);   // works both directions
+    return Math.max(0, Math.min(100, t * 100));
+  };
+
+  // Each entry: [value, eliteAnchor, poorAnchor, weight]
+  const parts = [
+    [r.est_woba,     0.270, 0.350, 25],   // xwOBA-against (low elite)
+    [r.xera,         2.80,  5.20,  20],   // xERA (low elite)
+    [r.xfip,         2.90,  5.20,  15],   // xFIP (low elite)
+    [r.barrel_pct,   0.030, 0.110, 12],   // barrel% (low elite)
+    [r.k_pct,        0.300, 0.150, 10],   // K% (HIGH elite -> elite>poor)
+    [r.hard_hit_pct, 0.300, 0.450,  8],   // hardhit% (low elite)
+    [r.babip,        0.260, 0.330,  5],   // babip (low elite)
+    [r.bb9,          1.80,  4.20,   5],   // bb/9 (low elite)
+  ];
+
+  let wsum = 0, w = 0;
+  for (const [val, elite, poor, weight] of parts) {
+    const n = norm(val, elite, poor);
+    if (n == null) continue;
+    wsum += n * weight;
+    w += weight;
+  }
+  if (w === 0) return null;
+  const score = Math.round(wsum / w);
+  const tier = score >= 65 ? 'good' : (score < 45 ? 'bad' : 'mid');
+  return { score, tier };
+}
+
 function PitcherStatsTable({ rows }) {
   const fmtPct = v => v==null ? '—' : (Number(v)*100).toFixed(1)+'%';
   const columns = [
-    { key:'last_first',      label:'Pitcher',  align:'left',  type:'string', width:'minmax(150px, 1.6fr)', sticky:true },
+    { key:'last_first',      label:'Pitcher',  align:'left',  type:'string', width:'minmax(170px, 1.8fr)', sticky:true,
+      rowColorFn: (r) => { const c = pitcherComposite(r); return c ? c.tier : null; },
+      fmt: (val, r) => {
+        const c = pitcherComposite(r);
+        const name = val == null ? '\u2014' : (val.split(',')[0] || val);
+        return (
+          <span className="pitcher-name-cell">
+            <span className="pitcher-name-text">{val}</span>
+            {c && <span className={`composite-badge composite-${c.tier}`}>{c.score}</span>}
+          </span>
+        );
+      } },
     { key:'pa',              label:'PA',       align:'num',   type:'number', dp:0,  width:'50px' },
     { key:'era',             label:'ERA',      align:'num',   type:'number', dp:2,  width:'55px', colorFn:COLOR.pERA },
     { key:'xera',            label:'xERA',     align:'num',   type:'number', dp:2,  width:'55px', colorFn:COLOR.pERA },

@@ -2509,3 +2509,37 @@ html, body {
 .stats-cell.sticky.stat-bad {
   background: var(--paper, #fff); color: var(--ink, #111); font-weight: 500;
 }
+
+
+/* Pitcher composite — aggregate tint on name cell + score badge */
+/* These OVERRIDE the .stats-cell.sticky color-strip rule intentionally. */
+.stats-cell.sticky.stat-agg-good { background: rgba(91, 142, 82, 0.20); }
+.stats-cell.sticky.stat-agg-mid  { background: rgba(200, 160, 74, 0.16); }
+.stats-cell.sticky.stat-agg-bad  { background: rgba(184, 72, 58, 0.16); }
+
+.pitcher-name-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+.pitcher-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composite-badge {
+  flex-shrink: 0;
+  min-width: 26px;
+  text-align: center;
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: #fff;
+}
+.composite-good { background: #5b8e52; }
+.composite-mid  { background: #c8a04a; }
+.composite-bad  { background: #b8483a; }
