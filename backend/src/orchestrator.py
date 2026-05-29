@@ -1,4 +1,4 @@
-﻿"""Daily orchestrator v4.1 Ã¢â‚¬â€ prop prices stored on edges for correct grading."""
+"""Daily orchestrator v4.1 Ã¢â‚¬â€ prop prices stored on edges for correct grading."""
 from __future__ import annotations
 import argparse, logging, math, traceback
 from dataclasses import asdict
