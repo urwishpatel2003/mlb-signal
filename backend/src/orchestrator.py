@@ -1,4 +1,4 @@
-"""Daily orchestrator v4.1 â€” prop prices stored on edges for correct grading."""
+﻿"""Daily orchestrator v4.1 Ã¢â‚¬â€ prop prices stored on edges for correct grading."""
 from __future__ import annotations
 import argparse, logging, math, traceback
 from dataclasses import asdict
@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 log = logging.getLogger("orchestrator")
 MODEL_VERSION = "v4.1"
 _DK_LINES: dict = {}
-EDGE_THRESHOLDS = {"Total":0.50,"F5":0.35,"ML":0.20,"K":0.50,"Hits":0.70,"ER":0.50,"Outs":0.70}
+EDGE_THRESHOLDS = {"Total":0.50,"F5":0.75,"ML":0.20,"K":0.50,"Hits":0.70,"ER":0.50,"Outs":0.70}
 
 def american_to_implied(o): return 100/(o+100) if o>0 else -o/(-o+100)
 def remove_vig(a,h): t=a+h; return a/t,h/t
@@ -64,7 +64,7 @@ def dedupe_totals_per_game(edges_for_game: list[dict]) -> list[dict]:
     """
     For totals only: keep at most ONE total edge per game (full-game OR F5).
     Larger |edge| wins regardless of direction. Updated 2026-05-26 to dedup
-    opposite-direction picks too — we never want two total bets on the same
+    opposite-direction picks too â€” we never want two total bets on the same
     game going in contradictory directions.
 
     ML, prop, and any non-total edges pass through unchanged.
@@ -91,7 +91,7 @@ def _persistent_cross_run_dedup(run_date_str: str) -> int:
 
     Returns count of edges unflagged.
 
-    Idempotent — safe to run multiple times. The grader skips
+    Idempotent â€” safe to run multiple times. The grader skips
     flagged=FALSE edges, so this guarantees display and grading agree.
     """
     rows = db.fetchall(
@@ -168,7 +168,7 @@ def compute_edges_for_game(*,game_pk,game,away_proj,home_proj,
                 "over_price":gr.get("market_f5_over_price"),
                 "under_price":gr.get("market_f5_under_price")})
 
-    # ML — very high conviction only:
+    # ML â€” very high conviction only:
     #   - Both pitchers must be source='statcast' (no fallback projections)
     #   - Favorites need 20pp edge (EDGE_THRESHOLDS["ML"] = 0.20)
     #   - Underdogs (+100 or longer) need 60pp edge (effectively almost never)
@@ -208,11 +208,11 @@ def compute_edges_for_game(*,game_pk,game,away_proj,home_proj,
             if abs(diff)<EDGE_THRESHOLDS.get(category,0.5): continue
             lean="OVER" if diff>0 else "UNDER"
             # ER props: use Poisson probability as primary gate (not raw edge size)
-            # Single-game ER is high variance — need >60% probability to fire
+            # Single-game ER is high variance â€” need >60% probability to fire
             if category == "ER":
                 conviction = poisson_tail_prob(proj_val, float(line), lean)
                 if conviction < 0.60: continue
-                # Override the raw edge threshold for ER — Poisson gate is sufficient
+                # Override the raw edge threshold for ER â€” Poisson gate is sufficient
                 diff = proj_val - float(line)  # recalc to ensure correct sign
             over_price =prop_data.get("over_price")  if isinstance(prop_data,dict) else None
             under_price=prop_data.get("under_price") if isinstance(prop_data,dict) else None
