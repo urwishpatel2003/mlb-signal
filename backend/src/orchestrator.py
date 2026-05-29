@@ -144,7 +144,13 @@ def compute_edges_for_game(*,game_pk,game,away_proj,home_proj,
 
     if market_total is not None:
         diff=full_total-market_total
-        if abs(diff)>=EDGE_THRESHOLDS["Total"]:
+        # Asymmetric Total threshold (calibration patch 2026-05-28):
+        # OVER needs 1.0+ runs gap (model currently OVER-drifting).
+        # UNDER keeps 0.5 default.
+        # REVERT to symmetric when projection_bias avg_diff stabilizes near zero.
+        _t_over_thresh  = 1.0
+        _t_under_thresh = 0.5
+        if (diff > 0 and diff >= _t_over_thresh) or (diff < 0 and abs(diff) >= _t_under_thresh):
             lean="OVER" if diff>0 else "UNDER"
             edges.append({"game_pk":game_pk,"kind":"total","category":"Total",
                 "pitcher_mlb_id":None,"pitcher_name":None,
