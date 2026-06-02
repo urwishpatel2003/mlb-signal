@@ -542,6 +542,7 @@ function GameCard({ game, projs }) {
           <span className="xera">xERA {Number(p.xera||0).toFixed(2)}</span>
         </div>
       ))}
+      <MatchupExpander game={game} />
       <div className="game-totals">
         <div className="stat"><div className="label">Market</div><div className="value">{game.market_total??'-'}</div></div>
         <div className="stat"><div className="label">Proj</div><div className="value">{game.proj_total?Number(game.proj_total).toFixed(2):'-'}</div></div>
@@ -1727,3 +1728,79 @@ function MyRecordView() {
   );
 }
 
+
+// ============================================================================
+// Matchup expander - lineups + per-hitter score vs the opposing starter
+// ============================================================================
+function MatchupExpander({ game }) {
+  const [open, setOpen]       = useState(false);
+  const [data, setData]       = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr]         = useState(null);
+
+  async function toggle() {
+    const next = !open;
+    setOpen(next);
+    if (next && data === null && !loading) {
+      setLoading(true);
+      try {
+        const r = await fetch(`${API_BASE}/api/matchups/${game.game_pk}`);
+        if (!r.ok) throw new Error(`Matchups API ${r.status}`);
+        setData(await r.json());
+      } catch (e) { setErr(e.message); }
+      finally { setLoading(false); }
+    }
+  }
+
+  const empty = data && (data.error || ((data.away_lineup||[]).length === 0 && (data.home_lineup||[]).length === 0));
+
+  return (
+    <div className="matchup-expander">
+      <button className="matchup-toggle" onClick={toggle}>
+        {open ? 'Hide lineups' : 'Show lineups & matchup scores'}
+      </button>
+      {open && (
+        <div className="matchup-body">
+          {loading && <div className="matchup-note">Loading lineups...</div>}
+          {err && <div className="matchup-note">Couldn't load lineups ({err})</div>}
+          {empty && <div className="matchup-note">Lineups not posted yet.</div>}
+          {data && !empty && (
+            <>
+              <MatchupSide
+                title={`${data.away_team} vs ${data.home_pitcher?.name || '?'} (${data.home_pitcher?.hand || '?'}HP)`}
+                hitters={data.away_lineup} />
+              <MatchupSide
+                title={`${data.home_team} vs ${data.away_pitcher?.name || '?'} (${data.away_pitcher?.hand || '?'}HP)`}
+                hitters={data.home_lineup} />
+              <div className="matchup-legend">Score 0-100 | hitter form + platoon + pitcher suppression | higher = better spot for the hitter</div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MatchupSide({ title, hitters }) {
+  if (!hitters || hitters.length === 0) return null;
+  return (
+    <div className="matchup-side">
+      <div className="matchup-side-title">{title}</div>
+      <div className="matchup-rows">
+        {hitters.map(h => (
+          <div key={h.mlb_id} className="matchup-row">
+            <span className="mu-order">{h.order}</span>
+            <span className="mu-name">{h.name}{h.bat_side ? <span className="mu-bs"> {h.bat_side}</span> : null}</span>
+            <span className="mu-pos">{h.position || ''}</span>
+            <span className="mu-woba">{h.season_xwoba != null ? Number(h.season_xwoba).toFixed(3) : '-'}</span>
+            <span
+              className={`mu-score mu-${h.tier || 'na'}`}
+              title={h.matchup_woba != null ? `matchup wOBA ${Number(h.matchup_woba).toFixed(3)}${h.used_split ? ' | vs-hand split' : ''}` : ''}>
+              {h.score != null ? h.score : '-'}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

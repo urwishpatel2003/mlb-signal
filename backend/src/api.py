@@ -1580,3 +1580,12 @@ def delete_today_edges(token: str, clean_projections: bool = False, date: str = 
 
     return summary
 
+
+@app.get("/api/matchups/{game_pk}")
+def matchups(game_pk: int):
+    """Per-game lineups scored against the opposing listed starter."""
+    from . import matchups as _m
+    data = _m.build_matchup(game_pk)
+    if data is None:
+        return {"error": "game not found", "game_pk": game_pk}
+    return data
