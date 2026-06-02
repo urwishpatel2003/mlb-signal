@@ -304,6 +304,7 @@ def _proj_helper(ip, er, true_era=4.0, high_variance=False):
         ip=ip, outs=ip*3, hits=8.0, er=er, bb=2.0, k=5.0,
         wx_factor=1.0, pf_factor=1.0,
         high_variance_flag=high_variance,
+        days_rest=4,
     )
 
 def test_game_total_combines_starters_plus_bullpen():

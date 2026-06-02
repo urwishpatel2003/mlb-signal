@@ -271,8 +271,18 @@ def _project_ip_pitch_budget(avg_pps, pit_ppa, lineup_ppa, fallback_ip):
 
 
 def _continuous_ip_leash(true_era):
-    """Smooth gradient: elite ERA→7.0 IP, bad ERA→4.0 IP."""
-    return max(4.0, min(7.0, 6.5 - (true_era - 3.5) * 0.40))
+    """Smooth gradient: elite ERA->7.0 IP, bad ERA->4.0 IP. Piecewise-linear
+    through (2.5, 7.0), (4.3, 6.2), (6.5, 4.5), floored at 4.0."""
+    e = float(true_era)
+    if e <= 2.5:
+        ip = 7.0
+    elif e <= 4.3:
+        ip = 7.0 - 0.4444 * (e - 2.5)      # 7.0 -> 6.2
+    elif e <= 6.5:
+        ip = 6.2 - 0.7727 * (e - 4.3)      # 6.2 -> 4.5
+    else:
+        ip = 4.5 - 0.7727 * (e - 6.5)      # keep falling, then floor
+    return max(4.0, min(7.0, ip))
 
 
 # =============================================================================
@@ -405,7 +415,11 @@ def project_pitcher(
     else:
         xera = float(pitcher_xstats["xera"])
         h_est_ba = float(pitcher_xstats.get("est_ba") or LEAGUE_XBA)
-        avg_bf_per_start = float(pitcher_xstats.get("tbf") or 0) / max(int(pitcher_xstats.get("gs") or 1), 1)
+        _tbf = float(pitcher_xstats.get("tbf") or 0)
+        _gs  = max(int(pitcher_xstats.get("gs") or 0), 1)
+        # Fall back to a league-average start (~24 BF) when tbf/gs are missing,
+        # else k_proj and hits_proj collapse to 0 for any row lacking tbf.
+        avg_bf_per_start = (_tbf / _gs) if _tbf > 0 else 24.0
         era  = float(pitcher_xstats.get("era") or LEAGUE_ER9)
 
         # Improvement #6: compute xFIP from components if available
