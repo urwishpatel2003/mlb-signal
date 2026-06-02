@@ -44,6 +44,19 @@ PLATOON_XWOBA = {
 }
 
 PA_WEIGHTS = {1:4.7,2:4.5,3:4.4,4:4.2,5:4.0,6:3.9,7:3.7,8:3.6,9:3.5}
+
+# First-5-innings PA weighting. Over ~5 IP a starter faces ~22 batters: two
+# full turns through the order plus ~4 more, so slots 1-4 pick up a 3rd PA
+# and 5-9 get 2. Tilts F5 toward the top of the order far more sharply than
+# the full-game taper (4.7 -> 3.5).
+PA_WEIGHTS_F5 = {1: 3.0, 2: 3.0, 3: 3.0, 4: 3.0, 5: 2.0, 6: 2.0, 7: 2.0, 8: 2.0, 9: 2.0}
+
+# F5 model tuning — both default NEUTRAL; fit with calibrate_f5.py against
+# stored F5 actuals once enough games are graded. SHAPE scales the starter's
+# early-inning rate vs its full-start average; CALIB is an independent overall
+# scale (F5 is ~pure starter ER, so ER bias hits it ~2x the full game).
+F5_SHAPE = 1.0
+F5_CALIB = 1.0
 SPLIT_PA_THRESHOLD = 80
 BB9_SHRINK_N = 200
 
@@ -187,8 +200,9 @@ def _platoon_factor(bat_side, pitcher_hand, hitter_splits):
 # =============================================================================
 
 def opp_lineup_xwoba(lineup, pitcher_hand, hitter_xstats, team_fallback,
-                     pa_threshold=20):
+                     pa_threshold=20, weights=None):
     """Returns (weighted_xwoba, used_actual_lineup, used_l15_blend)."""
+    weights = weights or PA_WEIGHTS
     if not lineup:
         return team_fallback, False, False
     ws = tw = 0.0; matched = 0; any_l15 = False
@@ -208,7 +222,7 @@ def opp_lineup_xwoba(lineup, pitcher_hand, hitter_xstats, team_fallback,
             blended = season_xwoba
         if l15 is not None: any_l15 = True
         platoon = _platoon_factor(spot.bat_side, pitcher_hand, row.get("splits"))
-        pa_w = PA_WEIGHTS.get(spot.order, 4.0)
+        pa_w = weights.get(spot.order, 4.0)
         ws += blended * platoon * pa_w
         tw += pa_w
         matched += 1
@@ -358,6 +372,15 @@ def project_pitcher(
 ) -> PitcherProjection:
     opp_xwoba, used_actual, used_l15 = opp_lineup_xwoba(
         opp_lineup, pitcher_hand, hitter_xstats, team_xwoba_fallback, pa_threshold=20)
+    # F5 lineup tilt — same lineup, first-5-innings PA weighting, as a ratio
+    # against the full-game weighting. Only when the real lineup is used; capped.
+    f5_opp_xwoba, f5_used, _ = opp_lineup_xwoba(
+        opp_lineup, pitcher_hand, hitter_xstats, team_xwoba_fallback,
+        pa_threshold=20, weights=PA_WEIGHTS_F5)
+    if used_actual and f5_used and opp_xwoba and opp_xwoba > 0:
+        f5_lineup_mult = max(0.92, min(1.08, f5_opp_xwoba / opp_xwoba))
+    else:
+        f5_lineup_mult = 1.0
     # Blend pitcher's own suppression ability with lineup quality.
     # Reduces the raw lineup xwOBA effect for elite pitchers (low xwOBA-against)
     # and amplifies it for bad pitchers (high xwOBA-against).
@@ -541,7 +564,7 @@ def project_pitcher(
     leash_adj = 1.0 - (wx_run - 1.0) * 0.3
     ip_adj    = ip * leash_adj
 
-    return PitcherProjection(
+    proj = PitcherProjection(
         pitcher_mlb_id=pitcher_mlb_id, last_first=pitcher_name,
         team_code=team_code, opp_team_code=opp_team_code, hand=pitcher_hand,
         source=source, pa_sample=pa,
@@ -559,6 +582,10 @@ def project_pitcher(
         high_variance_flag=high_variance,
         days_rest=int(days_rest) if days_rest is not None else None,
     )
+    # Dynamic attribute: not a dataclass field, so asdict()/to_dict() ignore
+    # it and it never reaches the DB. project_game_total reads it via getattr().
+    proj.f5_lineup_mult = round(f5_lineup_mult, 4)
+    return proj
 
 
 # =============================================================================
@@ -616,9 +643,30 @@ def project_game_total(
 
     full_total = home_runs + away_runs
 
-    f5_away = (away_proj.er / away_proj.ip) * min(5, away_proj.ip) * away_off_scaler if away_proj.ip > 0 else 0
-    f5_home = (home_proj.er / home_proj.ip) * min(5, home_proj.ip) * home_off_scaler if home_proj.ip > 0 else 0
-    f5_total = f5_away + f5_home
+    # --- F5 (first 5 innings) — independent model, was a truncated full start ---
+    # Opposing starter's per-inning ER spread across a FULL 5 innings, with:
+    #   1. coverage   — innings the starter doesn't reach are filled at the
+    #                   bullpen rate, not zeroed (kills the short-start UNDER bias)
+    #   2. shape      — F5_SHAPE for early-inning / times-through-order context
+    #   3. lineup     — f5_lineup_mult re-weights for first-5 PA exposure
+    # F5_CALIB is the independent overall scale.
+    away_f5_lu = float(getattr(away_proj, "f5_lineup_mult", 1.0))
+    home_f5_lu = float(getattr(home_proj, "f5_lineup_mult", 1.0))
+
+    def _f5_runs(starter, bp_er9, off_scaler, lu_mult):
+        if starter.ip <= 0:
+            return 0.0
+        base_rate    = starter.er / starter.ip       # ER/inning; park+wx+HR baked in
+        ip_in_f5     = min(5.0, starter.ip)
+        gap_innings  = 5.0 - ip_in_f5                 # F5 innings beyond the starter
+        starter_runs = base_rate * ip_in_f5 * F5_SHAPE * lu_mult
+        bullpen_runs = (bp_er9 / 9.0) * gap_innings * park_wx
+        return (starter_runs + bullpen_runs) * off_scaler
+
+    # away starter -> home offense's F5 runs (and vice versa), mirroring full game
+    f5_home_runs = _f5_runs(away_proj, away_bp_er9, home_off_scaler, away_f5_lu)
+    f5_away_runs = _f5_runs(home_proj, home_bp_er9, away_off_scaler, home_f5_lu)
+    f5_total = (f5_home_runs + f5_away_runs) * F5_CALIB
 
     return round(full_total,2), round(f5_total,2), round(home_runs,2), round(away_runs,2)
 
