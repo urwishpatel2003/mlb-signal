@@ -1348,6 +1348,7 @@ const ADMIN_DIAGNOSTICS = [
   { name: 'xstats',               endpoint: '/api/admin/diag/xstats',                  desc: 'xstats table state + LEAGUE_XWOBA + last refresh' },
   { name: 'Projection Bias',      endpoint: '/api/admin/diag/projection_bias',         desc: '14-day projection vs market drift' },
   { name: 'Bias vs Actual',      endpoint: '/api/admin/diag/bias_actual',             desc: 'Proj vs ACTUAL results: bias, OU cash record, proj-level slope, F5' },
+  { name: 'Calibration Fit',     endpoint: '/api/admin/diag/calibration_fit',         desc: 'Fit hinge calibration (low-end lift) + per-bucket before/after' },
   { name: 'Edges (today)',        endpoint: '/api/admin/diag/edges',                   desc: 'Flagged edges by kind/lean for today' },
   { name: 'Games (today)',        endpoint: '/api/admin/diag/games',                   desc: 'Games + projections + F5 cols' },
   { name: 'Pitcher Projections',  endpoint: '/api/admin/diag/pitcher_projections',     desc: '14-day pitcher projection summary' },

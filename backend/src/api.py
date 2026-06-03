@@ -1709,3 +1709,37 @@ def diag_bias_actual(token: str, days: int = 21):
                 "projection per game. ou_vs_market = did the model's side beat "
                 "the actual result against the market line.",
     }
+
+
+@app.get("/api/admin/diag/calibration_fit/{token}")
+def diag_calibration_fit(token: str, days: int = 21, shrink: float = 0.5,
+                         knot: float = 8.5, knot_f5: float = 5.0):
+    """Fit (NOT persist) the hinge calibration and show its per-bucket effect.
+    proj_cal = proj + lift*max(0, knot-proj): identity above knot, lifts the
+    under-projected low end. shrink 0..1 scales the lift."""
+    _check_admin(token)
+    from . import calibration as cal
+
+    res = cal.fit(days=days, shrink=shrink, knot_total=knot, knot_f5=knot_f5)
+    rows = cal.fetch_rows(days)
+    t = res.get("total", {})
+    buckets = []
+    if t.get("ok"):
+        k = t["knot"]; lift = t["lift"]
+        edges = [(0, 7.5), (7.5, 8.5), (8.5, 9.5), (9.5, 99)]
+        labels = ["<7.5", "7.5-8.5", "8.5-9.5", ">=9.5"]
+        for (lo, hi), lab in zip(edges, labels):
+            seg = [(float(r["proj_total"]), float(r["actual_total"])) for r in rows
+                   if r.get("proj_total") is not None and r.get("actual_total") is not None
+                   and lo <= float(r["proj_total"]) < hi]
+            if seg:
+                bb = sum(p - a for p, a in seg) / len(seg)
+                ba = sum((p + lift * max(0.0, k - p)) - a for p, a in seg) / len(seg)
+                buckets.append({"bucket": lab, "n": len(seg),
+                                "bias_before": round(bb, 2), "bias_after": round(ba, 2)})
+    res["total_bucket_effect"] = buckets
+    res["note"] = ("Fit only, not persisted. Hinge keeps identity at/above knot "
+                   "(protects the accurate high-proj edge) and lifts the low end "
+                   "to remove its under-bias. Tune shrink/knot here, then wire "
+                   "into the orchestrator to apply.")
+    return res
