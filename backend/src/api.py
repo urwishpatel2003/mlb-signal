@@ -1743,3 +1743,15 @@ def diag_calibration_fit(token: str, days: int = 21, shrink: float = 0.5,
                    "to remove its under-bias. Tune shrink/knot here, then wire "
                    "into the orchestrator to apply.")
     return res
+
+
+@app.get("/api/admin/diag/calibration_validate/{token}")
+def diag_calibration_validate(token: str, train_days: int = 21, test_days: int = 7,
+                              knot: float = 8.5, knot_f5: float = 5.0):
+    """Walk-forward shrink selection. Fits the hinge lift on the older train_days,
+    applies to the held-out last test_days, sweeps shrink 0..1, and returns the
+    value with the lowest out-of-sample bias."""
+    _check_admin(token)
+    from . import calibration as cal
+    return cal.validate(train_days=train_days, test_days=test_days,
+                        knot_total=knot, knot_f5=knot_f5)
