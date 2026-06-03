@@ -396,7 +396,7 @@ def project_pitcher(
     # and amplifies it for bad pitchers (high xwOBA-against).
     # Use pitcher xwOBA-against when available, else fall back to league average.
     pitcher_xwoba_against = float((pitcher_xstats or {}).get("est_woba") or LEAGUE_XWOBA)
-    effective_opp_xwoba = 0.60 * pitcher_xwoba_against + 0.40 * opp_xwoba
+    effective_opp_xwoba = opp_xwoba  # lineup-only: pitcher skill is already in true_era (removed 60/40 double-count)
     woba_delta = effective_opp_xwoba - LEAGUE_XWOBA
 
     pa = int((pitcher_xstats or {}).get("pa") or 0)
