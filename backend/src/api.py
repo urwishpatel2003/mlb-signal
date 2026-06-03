@@ -1589,3 +1589,123 @@ def matchups(game_pk: int):
     if data is None:
         return {"error": "game not found", "game_pk": game_pk}
     return data
+
+
+@app.get("/api/admin/diag/bias_actual/{token}")
+def diag_bias_actual(token: str, days: int = 21):
+    """Projection bias vs ACTUAL results (not market). Deduped to the latest
+    projection per game. signed bias = proj - actual (+ = model runs hot)."""
+    _check_admin(token)
+    from . import db
+    from statistics import mean
+
+    rows = db.fetchall(
+        "SELECT DISTINCT ON (gp.game_pk) "
+        "       gp.game_pk, pr.run_date::text AS run_date, "
+        "       gp.proj_total, gp.proj_f5, "
+        "       g.market_total, g.market_f5_total, "
+        "       (g.away_score + g.home_score) AS actual_total, "
+        "       (g.away_f5_runs + g.home_f5_runs) AS actual_f5 "
+        "FROM game_projections gp "
+        "JOIN projection_runs pr ON pr.run_id = gp.run_id "
+        "JOIN games g ON g.game_pk = gp.game_pk "
+        "WHERE g.away_score IS NOT NULL AND g.home_score IS NOT NULL "
+        "  AND gp.proj_total IS NOT NULL "
+        "  AND pr.run_date >= (CURRENT_DATE - %s::int) "
+        "ORDER BY gp.game_pk, gp.run_id DESC",
+        (days,)
+    )
+    if not rows:
+        return {"window_days": days, "n_games": 0,
+                "note": "No graded games with final scores in window."}
+
+    def f(x):
+        return float(x) if x is not None else None
+
+    recs = []
+    for r in rows:
+        proj = f(r["proj_total"]); act = f(r["actual_total"]); mkt = f(r["market_total"])
+        if proj is None or act is None:
+            continue
+        recs.append({"run_date": r["run_date"], "proj": proj, "actual": act, "market": mkt,
+                     "proj_f5": f(r["proj_f5"]), "actual_f5": f(r["actual_f5"]),
+                     "market_f5": f(r["market_f5_total"])})
+
+    def ou(rec_list):
+        w = l = p = 0
+        for x in rec_list:
+            if x["market"] is None:
+                continue
+            if x["actual"] == x["market"]:
+                p += 1; continue
+            lean_over = x["proj"] > x["market"]
+            hit = (x["actual"] > x["market"]) == lean_over
+            w += int(hit); l += int(not hit)
+        g = w + l
+        return {"w": w, "l": l, "push": p, "pct": round(100 * w / g, 1) if g else None}
+
+    proj = [x["proj"] for x in recs]; act = [x["actual"] for x in recs]
+    mkts = [x["market"] for x in recs if x["market"] is not None]
+    bias = mean(pp - aa for pp, aa in zip(proj, act))
+    overall = {
+        "n_games": len(recs),
+        "bias": round(bias, 3),
+        "mae": round(mean(abs(pp - aa) for pp, aa in zip(proj, act)), 3),
+        "avg_proj": round(mean(proj), 2),
+        "avg_actual": round(mean(act), 2),
+        "avg_market": round(mean(mkts), 2) if mkts else None,
+        "suggested_offset": round(-bias, 3),
+        "ou_vs_market": ou(recs),
+    }
+
+    edges = [(0, 7.5), (7.5, 8.5), (8.5, 9.5), (9.5, 99)]
+    labels = ["<7.5", "7.5-8.5", "8.5-9.5", ">=9.5"]
+    buckets = []
+    for (lo, hi), lab in zip(edges, labels):
+        b = [x for x in recs if lo <= x["proj"] < hi]
+        if b:
+            buckets.append({
+                "bucket": lab, "n": len(b),
+                "bias": round(mean(x["proj"] - x["actual"] for x in b), 3),
+                "avg_proj": round(mean(x["proj"] for x in b), 2),
+                "avg_actual": round(mean(x["actual"] for x in b), 2),
+                "ou_pct": ou(b)["pct"],
+            })
+
+    by_date = {}
+    for x in recs:
+        by_date.setdefault(x["run_date"], []).append(x)
+    days_out = []
+    for d in sorted(by_date, reverse=True):
+        b = by_date[d]; o = ou(b)
+        days_out.append({
+            "run_date": d, "n": len(b),
+            "bias": round(mean(x["proj"] - x["actual"] for x in b), 2),
+            "avg_proj": round(mean(x["proj"] for x in b), 2),
+            "avg_actual": round(mean(x["actual"] for x in b), 2),
+            "ou": f'{o["w"]}-{o["l"]}',
+        })
+
+    f5 = [x for x in recs if x["proj_f5"] is not None and x["actual_f5"] is not None]
+    f5_out = None
+    if f5:
+        fp = [x["proj_f5"] for x in f5]; fa = [x["actual_f5"] for x in f5]
+        f5_out = {
+            "n_games": len(f5),
+            "bias": round(mean(pp - aa for pp, aa in zip(fp, fa)), 3),
+            "mae": round(mean(abs(pp - aa) for pp, aa in zip(fp, fa)), 3),
+            "avg_proj_f5": round(mean(fp), 2),
+            "avg_actual_f5": round(mean(fa), 2),
+            "suggested_F5_CALIB": round(mean(fa) / mean(fp), 4) if mean(fp) else None,
+        }
+
+    return {
+        "window_days": days,
+        "overall": overall,
+        "by_proj_bucket": buckets,
+        "by_date": days_out,
+        "f5": f5_out,
+        "note": "bias = proj - actual (+ = model runs hot). Deduped to latest "
+                "projection per game. ou_vs_market = did the model's side beat "
+                "the actual result against the market line.",
+    }
