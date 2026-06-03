@@ -1,39 +1,28 @@
 """
 calibration.py — hinge calibration of projected totals to actual results.
 
-Diagnosis behind this: the model is accurate (and profitable on OU) when it
-projects HIGH totals, but under-projects badly when it projects LOW (good-
-pitcher games still score in this environment). A flat offset/multiplier is the
-wrong tool - it would lift the accurate high end too and damage the real edge
-that lives there. So this uses a HINGE:
+HINGE:  proj_cal = proj + lift * max(0, knot - proj)
+Identity at/above `knot` (protects the accurate high-proj edge); lifts the
+under-projected low end. `lift` is fit to zero the low-segment bias, scaled by
+`shrink`. Total and F5 fit independently.
 
-    proj_cal = proj + lift * max(0, knot - proj)
+Phase 2 (applied in the orchestrator):
+  - load()            -> current {knot, lift} per target from projection_calibration
+  - apply_loaded(v,p) -> apply the loaded hinge (identity if no params)
+  - refit_and_store() -> re-fit on RAW projections vs actuals, upsert the params
 
-Identity at/above `knot` (leaves the accurate high-proj edge untouched); lifts
-projections below the knot toward it to remove their under-bias. `lift` is fit
-to zero the low-segment bias, then scaled by `shrink` (0 = no correction,
-1 = full) so a short hot/cold stretch isn't permanently baked in. Total and F5
-are fit independently.
-
-`validate()` picks `shrink` honestly: fit the lift on an older train window,
-apply to a held-out recent test window, sweep shrink, return the value with the
-lowest OUT-OF-SAMPLE bias.
-
-FEEDBACK-LOOP NOTE: fits read the stored projection column, which TODAY is the
-raw model output. When you wire application into the orchestrator, store the
-calibrated value in proj_total but keep the RAW value in a new column and fit on
-THAT (pass proj_col=...), or the calibration converges to identity.
+FEEDBACK-LOOP: refit reads proj_total_raw / proj_f5_raw (the uncalibrated stored
+value). The orchestrator stores raw there and the calibrated value in proj_total.
 """
 from datetime import date, timedelta
 from statistics import mean
 
 from . import db
 
-SHRINK_SWEEP = [round(0.1 * i, 1) for i in range(11)]   # 0.0 .. 1.0
+SHRINK_SWEEP = [round(0.1 * i, 1) for i in range(11)]
 
 
 def _low_lift_fit(pts, knot):
-    """Raw lift that would zero the low-segment (<knot) bias. shrink-independent."""
     low = [(p, a) for p, a in pts if p < knot]
     if not low:
         return 0.0
@@ -43,7 +32,6 @@ def _low_lift_fit(pts, knot):
 
 
 def fit_hinge(pts, knot, shrink):
-    """pts: list of (proj, actual). Returns the fitted hinge + before/after."""
     n = len(pts)
     if n < 20:
         return {"ok": False, "n": n, "reason": "need >=20 graded games in window"}
@@ -58,8 +46,7 @@ def fit_hinge(pts, knot, shrink):
         return p + lift * max(0.0, knot - p)
 
     return {
-        "ok": True, "n": n, "n_low": len(low),
-        "knot": knot, "shrink": shrink,
+        "ok": True, "n": n, "n_low": len(low), "knot": knot, "shrink": shrink,
         "lift_fit": round(lift_fit, 4), "lift": round(lift, 4),
         "bias_low_raw": round(bias_low, 3),
         "bias_before": round(bias_all, 3),
@@ -78,8 +65,6 @@ def apply_hinge(value, knot, lift):
 
 
 def fetch_rows(days, proj_col="proj_total", proj_f5_col="proj_f5"):
-    """Latest projection per graded game over the window. proj_col is the column
-    to fit on - keep it pointed at the RAW projection once application lands."""
     return db.fetchall(
         f"SELECT DISTINCT ON (gp.game_pk) gp.game_pk, "
         f"  pr.run_date::text AS run_date, "
@@ -103,19 +88,14 @@ def fit(days=21, shrink=0.5, knot_total=8.5, knot_f5=5.0,
            if r.get("proj_total") is not None and r.get("actual_total") is not None]
     f5 = [(float(r["proj_f5"]), float(r["actual_f5"])) for r in rows
           if r.get("proj_f5") is not None and r.get("actual_f5") is not None]
-    return {
-        "window_days": days, "shrink": shrink, "n_rows": len(rows),
-        "total": fit_hinge(tot, knot_total, shrink),
-        "f5": fit_hinge(f5, knot_f5, shrink),
-    }
+    return {"window_days": days, "shrink": shrink, "n_rows": len(rows),
+            "total": fit_hinge(tot, knot_total, shrink),
+            "f5": fit_hinge(f5, knot_f5, shrink)}
 
 
-# ---------------------------------------------------------------------------
-# Walk-forward shrink selection
-# ---------------------------------------------------------------------------
+# --- walk-forward shrink selection -----------------------------------------
 
 def _split(rows, proj_key, act_key, cutoff_date):
-    """(train_pts, test_pts); test = games whose latest run_date >= cutoff."""
     train, test = [], []
     for r in rows:
         if r.get(proj_key) is None or r.get(act_key) is None:
@@ -138,13 +118,11 @@ def _sweep(train, test, knot, sweep):
         results.append({"shrink": s, "lift": round(lift, 4),
                         "test_bias": round(tb, 3), "test_mae": round(tm, 3)})
     best = min(results, key=lambda r: abs(r["test_bias"]))
-    return {
-        "ok": True, "n_train": len(train), "n_test": len(test), "knot": knot,
-        "train_lift_fit": round(lf, 4),
-        "test_bias_uncalibrated": round(mean(p - a for p, a in test), 3),
-        "best_shrink": best["shrink"], "best_test_bias": best["test_bias"],
-        "sweep": results,
-    }
+    return {"ok": True, "n_train": len(train), "n_test": len(test), "knot": knot,
+            "train_lift_fit": round(lf, 4),
+            "test_bias_uncalibrated": round(mean(p - a for p, a in test), 3),
+            "best_shrink": best["shrink"], "best_test_bias": best["test_bias"],
+            "sweep": results}
 
 
 def validate(train_days=21, test_days=7, knot_total=8.5, knot_f5=5.0, sweep=None):
@@ -153,13 +131,120 @@ def validate(train_days=21, test_days=7, knot_total=8.5, knot_f5=5.0, sweep=None
     cutoff = (date.today() - timedelta(days=test_days)).isoformat()
     tot_tr, tot_te = _split(rows, "proj_total", "actual_total", cutoff)
     f5_tr, f5_te = _split(rows, "proj_f5", "actual_f5", cutoff)
-    return {
-        "train_days": train_days, "test_days": test_days,
-        "cutoff_date": cutoff, "n_rows": len(rows),
-        "total": _sweep(tot_tr, tot_te, knot_total, sweep),
-        "f5": _sweep(f5_tr, f5_te, knot_f5, sweep),
-        "note": "Hinge lift fit on the older train_days, applied to the held-out "
-                "last test_days. best_shrink minimizes |out-of-sample bias|. "
-                "best at 0.0 => calibration overfits, don't apply much; best at "
-                "1.0 => persistent defect, the test window wants full lift.",
-    }
+    return {"train_days": train_days, "test_days": test_days,
+            "cutoff_date": cutoff, "n_rows": len(rows),
+            "total": _sweep(tot_tr, tot_te, knot_total, sweep),
+            "f5": _sweep(f5_tr, f5_te, knot_f5, sweep)}
+
+
+# --- Phase 2: load / apply / persist ---------------------------------------
+
+def load():
+    """{'total': {'knot','lift'}, 'f5': {...}} from the calibration table.
+    Returns {} (-> identity) if the table is missing, so the orchestrator never
+    crashes when calibration isn't set up yet."""
+    try:
+        rows = db.fetchall("SELECT target, knot, lift FROM projection_calibration")
+    except Exception:
+        return {}
+    return {r["target"]: {"knot": float(r["knot"]), "lift": float(r["lift"])}
+            for r in rows}
+
+
+def apply_loaded(value, params):
+    """Apply a loaded hinge; identity if params is falsy."""
+    if not params or value is None:
+        return value
+    return apply_hinge(value, params["knot"], params["lift"])
+
+
+def refit_and_store(days=21, shrink=1.0, knot_total=8.5, knot_f5=5.0):
+    """Re-fit the hinge on RAW projections vs actuals and upsert the params."""
+    res = fit(days=days, shrink=shrink, knot_total=knot_total, knot_f5=knot_f5,
+              proj_col="proj_total_raw", proj_f5_col="proj_f5_raw")
+    out = {}
+    for tgt in ("total", "f5"):
+        r = res[tgt]
+        if not r.get("ok"):
+            out[tgt] = {"stored": False, **r}
+            continue
+        db.execute(
+            "INSERT INTO projection_calibration "
+            "(target,knot,lift,shrink,window_days,n,bias_before,bias_after,fit_at) "
+            "VALUES (%(target)s,%(knot)s,%(lift)s,%(shrink)s,%(window_days)s,"
+            "        %(n)s,%(bias_before)s,%(bias_after)s,now()) "
+            "ON CONFLICT (target) DO UPDATE SET "
+            "  knot=EXCLUDED.knot, lift=EXCLUDED.lift, shrink=EXCLUDED.shrink, "
+            "  window_days=EXCLUDED.window_days, n=EXCLUDED.n, "
+            "  bias_before=EXCLUDED.bias_before, bias_after=EXCLUDED.bias_after, "
+            "  fit_at=now()",
+            {"target": tgt, "knot": r["knot"], "lift": r["lift"], "shrink": shrink,
+             "window_days": days, "n": r["n"],
+             "bias_before": r["bias_before"], "bias_after": r["bias_after"]})
+        out[tgt] = {"stored": True, "knot": r["knot"], "lift": r["lift"],
+                    "n": r["n"], "bias_before": r["bias_before"],
+                    "bias_after": r["bias_after"]}
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: persisted params - load() for the orchestrator, refit_and_store()
+# for the rolling update. Fits on the RAW projection columns (see feedback note).
+# ---------------------------------------------------------------------------
+
+_IDENTITY = {"total": {"knot": 8.5, "lift": 0.0},
+             "f5": {"knot": 5.0, "lift": 0.0}}
+
+
+def load():
+    """Current calibration params: {'total': {'knot','lift'}, 'f5': {...}}.
+    Returns identity (lift 0 = no change) if the table is missing or unseeded,
+    so the projection path never breaks."""
+    out = {k: dict(v) for k, v in _IDENTITY.items()}
+    try:
+        rows = db.fetchall("SELECT target, knot, lift FROM projection_calibration")
+    except Exception:
+        return out
+    for r in rows:
+        t = r["target"]
+        if t in out:
+            out[t] = {"knot": float(r["knot"]), "lift": float(r["lift"])}
+    return out
+
+
+def apply_loaded(value, params):
+    """Apply a loaded {'knot','lift'} set to one projection. Safe on None."""
+    if value is None or not params:
+        return value
+    return apply_hinge(value, params["knot"], params["lift"])
+
+
+def refit_and_store(days=21, shrink=1.0, knot_total=8.5, knot_f5=5.0):
+    """Fit the hinge on the RAW projection columns over the window and upsert the
+    resulting lift into projection_calibration. Call after grading so the window
+    includes fresh actuals."""
+    rows = fetch_rows(days, proj_col="proj_total_raw", proj_f5_col="proj_f5_raw")
+    tot = [(float(r["proj_total"]), float(r["actual_total"])) for r in rows
+           if r.get("proj_total") is not None and r.get("actual_total") is not None]
+    f5 = [(float(r["proj_f5"]), float(r["actual_f5"])) for r in rows
+          if r.get("proj_f5") is not None and r.get("actual_f5") is not None]
+    out = {}
+    for target, pts, knot in (("total", tot, knot_total), ("f5", f5, knot_f5)):
+        res = fit_hinge(pts, knot, shrink)
+        if not res.get("ok"):
+            out[target] = res
+            continue
+        db.execute(
+            "INSERT INTO projection_calibration "
+            "(target, knot, lift, shrink, window_days, n, bias_before, bias_after, fit_at) "
+            "VALUES (%(target)s,%(knot)s,%(lift)s,%(shrink)s,%(window_days)s,%(n)s,"
+            "%(bias_before)s,%(bias_after)s, now()) "
+            "ON CONFLICT (target) DO UPDATE SET "
+            "knot=EXCLUDED.knot, lift=EXCLUDED.lift, shrink=EXCLUDED.shrink, "
+            "window_days=EXCLUDED.window_days, n=EXCLUDED.n, "
+            "bias_before=EXCLUDED.bias_before, bias_after=EXCLUDED.bias_after, fit_at=now()",
+            {"target": target, "knot": knot, "lift": res["lift"], "shrink": shrink,
+             "window_days": days, "n": res["n"],
+             "bias_before": res["bias_before"], "bias_after": res["bias_after"]})
+        out[target] = res
+    return {"days": days, "shrink": shrink, "stored": out}

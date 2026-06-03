@@ -1365,6 +1365,7 @@ const ADMIN_DIAGNOSTICS = [
 
 const ADMIN_MISC = [
   { name: 'Recompute Reasoning',  endpoint: '/api/admin/recompute_reasoning',          desc: 'Re-run reasoning for today\'s edges' },
+  { name: 'Refit Calibration',    endpoint: '/api/admin/calibration/refit',            desc: 'Refit + persist the hinge (run after grading)' },
   { name: 'Zero Prop Units',      endpoint: '/api/admin/zero_prop_units',               desc: 'Set profit_units=0 for prop edges' },
 ];
 

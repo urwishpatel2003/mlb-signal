@@ -324,6 +324,11 @@ def run(trigger="manual"):
                 away_proj=away_proj,home_proj=home_proj,
                 away_team_xstats=all_team.get(g.away_team),home_team_xstats=all_team.get(g.home_team),
                 park=park,weather=weather)
+            from . import calibration as _calmod
+            proj_total_raw, proj_f5_raw = full_total, f5_total
+            _cal = _calmod.load()
+            full_total = _calmod.apply_loaded(full_total, _cal["total"])
+            f5_total = _calmod.apply_loaded(f5_total, _cal["f5"])
             raw_hw,raw_aw=skellam_win_prob(home_runs,away_runs)
             home_win_prob,away_win_prob=projections.apply_hfa(raw_hw,raw_aw)
             hfa_applied=projections.HOME_FIELD_ADVANTAGE
@@ -338,7 +343,7 @@ def run(trigger="manual"):
                 hep=home_win_prob-hi; aep=away_win_prob-ai
                 if abs(hep)>=EDGE_THRESHOLDS["ML"] and hep>=aep: ml_edge_team,ml_edge_pct=g.home_team,round(hep,4)
                 elif abs(aep)>=EDGE_THRESHOLDS["ML"]: ml_edge_team,ml_edge_pct=g.away_team,round(aep,4)
-            db.insert_game_projection(run_id,{"game_pk":g.game_pk,"proj_total":full_total,
+            db.insert_game_projection(run_id,{"game_pk":g.game_pk,"proj_total":full_total,"proj_total_raw":proj_total_raw,"proj_f5_raw":proj_f5_raw,
                 "proj_f5":f5_total,"proj_home_runs":home_runs,"proj_away_runs":away_runs,
                 "market_total":market_total,"edge_total":edge_total,"lean":lean,"confidence_tier":None,
                 "market_f5_total":market_f5_total,"edge_f5":edge_f5,"lean_f5":lean_f5,

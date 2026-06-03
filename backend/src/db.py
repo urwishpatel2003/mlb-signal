@@ -178,18 +178,20 @@ def insert_pitcher_projection(run_id, p):
 def insert_game_projection(run_id, g):
     sql = """INSERT INTO game_projections (
           run_id,game_pk,proj_total,proj_f5,proj_home_runs,proj_away_runs,
+          proj_total_raw,proj_f5_raw,
           market_total,edge_total,lean,confidence_tier,
           market_f5_total,edge_f5,lean_f5,
           home_win_prob,away_win_prob,away_ml,home_ml,
           away_ml_implied,home_ml_implied,ml_edge_team,ml_edge_pct,hfa_applied
         ) VALUES (
           %(run_id)s,%(game_pk)s,%(proj_total)s,%(proj_f5)s,%(proj_home_runs)s,%(proj_away_runs)s,
+          %(proj_total_raw)s,%(proj_f5_raw)s,
           %(market_total)s,%(edge_total)s,%(lean)s,%(confidence_tier)s,
           %(market_f5_total)s,%(edge_f5)s,%(lean_f5)s,
           %(home_win_prob)s,%(away_win_prob)s,%(away_ml)s,%(home_ml)s,
           %(away_ml_implied)s,%(home_ml_implied)s,%(ml_edge_team)s,%(ml_edge_pct)s,%(hfa_applied)s
         )"""
-    execute(sql, {**g,"run_id":run_id})
+    execute(sql, {"proj_total_raw":None,"proj_f5_raw":None,**g,"run_id":run_id})
 
 def insert_edge(run_id, e):
     import json as _json
