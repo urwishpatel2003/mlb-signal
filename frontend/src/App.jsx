@@ -1406,6 +1406,7 @@ function AdminPanelV2({ visible, onClose }) {
       <AdminGroup label="Triggers" items={ADMIN_TRIGGERS} results={results} onCall={call} note="These take 30-90s to complete." />
       <AdminGroup label="Diagnostics" items={ADMIN_DIAGNOSTICS} results={results} onCall={call} />
       <AdminGroup label="Misc" items={ADMIN_MISC} results={results} onCall={call} />
+      <EdgeDeleter />
     </div>
   );
 }
@@ -1808,3 +1809,65 @@ function MatchupSide({ title, hitters }) {
     </div>
   );
 }
+
+
+// ============================================================================
+// EdgeDeleter — delete edges by date + type (preview, then confirm). Used in
+// AdminPanelV2. Reuses .admin-* styles.
+// ============================================================================
+function EdgeDeleter() {
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [kind, setKind] = useState('all');
+  const [kinds, setKinds] = useState([]);
+  const [out, setOut] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  async function hit(confirm) {
+    if (!ADMIN_TOKEN) { setOut({ state: 'error', data: 'ADMIN_TOKEN missing (VITE_ADMIN_TOKEN)' }); return; }
+    setBusy(true);
+    setOut({ state: 'running', data: 'Working...' });
+    try {
+      const qs = new URLSearchParams({ date, kind, confirm }).toString();
+      const r = await fetch(`${API_BASE}/api/admin/edges/delete/${ADMIN_TOKEN}?${qs}`);
+      const text = await r.text();
+      let parsed; try { parsed = JSON.parse(text); } catch { parsed = text; }
+      if (parsed && parsed.by_kind) setKinds(parsed.by_kind.map(k => k.kind));
+      setOut({ state: r.ok ? 'success' : 'error', data: parsed });
+    } catch (e) {
+      setOut({ state: 'error', data: e.message });
+    }
+    setBusy(false);
+  }
+
+  function onDelete() {
+    const label = kind === 'all' ? 'ALL types' : kind;
+    if (!window.confirm(`Delete ${label} edges for ${date}? This cannot be undone.`)) return;
+    hit('yes');
+  }
+
+  return (
+    <div className="admin-group">
+      <h3 className="admin-group-label">Delete Edges</h3>
+      <p className="admin-group-note">Remove edges by date and type. Preview first to see counts, then Delete.</p>
+      <div className="admin-group-list">
+        <div className="admin-item" style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <label>Date{' '}<input type="date" value={date} onChange={e => setDate(e.target.value)} /></label>
+          <label>Type{' '}
+            <select value={kind} onChange={e => setKind(e.target.value)}>
+              <option value="all">All</option>
+              {kinds.map(k => <option key={k} value={k}>{k}</option>)}
+            </select>
+          </label>
+          <button className="admin-item-btn" disabled={busy} onClick={() => hit('no')}>Preview</button>
+          <button className="admin-item-btn admin-state-error" disabled={busy} onClick={onDelete}>Delete</button>
+        </div>
+        {out && out.data !== undefined && (
+          <pre className={`admin-item-output admin-state-${out.state}`}>
+            {typeof out.data === 'string' ? out.data : JSON.stringify(out.data, null, 2)}
+          </pre>
+        )}
+      </div>
+    </div>
+  );
+}
+

@@ -1766,3 +1766,43 @@ def admin_calibration_refit(token: str, days: int = 21, shrink: float = 1.0,
     from . import calibration as cal
     return cal.refit_and_store(days=days, shrink=shrink,
                                knot_total=knot, knot_f5=knot_f5)
+
+
+@app.get("/api/admin/edges/delete/{token}")
+def admin_delete_edges(token: str, date: str = "", kind: str = "", confirm: str = "no"):
+    """Delete edges by slate date + optional kind. confirm!=yes returns a preview
+    (total + per-kind counts); confirm=yes deletes (edge_results first, then edges)."""
+    _check_admin(token)
+    from . import db
+
+    if not date:
+        row = db.fetchone("SELECT (now() AT TIME ZONE 'America/New_York')::date::text AS d")
+        date = row["d"] if row else None
+
+    kind_filter = (kind or "").strip()
+    use_kind = bool(kind_filter) and kind_filter.lower() != "all"
+    where = "g.game_date = %(date)s"
+    params = {"date": date}
+    if use_kind:
+        where += " AND e.kind = %(kind)s"
+        params["kind"] = kind_filter
+
+    by_kind_rows = db.fetchall(
+        f"SELECT e.kind AS kind, count(*) AS n FROM edges e "
+        f"JOIN games g ON g.game_pk = e.game_pk "
+        f"WHERE {where} GROUP BY e.kind ORDER BY e.kind", params)
+    by_kind = [{"kind": r["kind"], "n": int(r["n"])} for r in by_kind_rows]
+    total = sum(b["n"] for b in by_kind)
+
+    if confirm.lower() != "yes":
+        return {"preview": True, "date": date, "kind": kind_filter or "all",
+                "total": total, "by_kind": by_kind}
+
+    db.execute(
+        f"DELETE FROM edge_results WHERE edge_id IN ("
+        f"  SELECT e.edge_id FROM edges e JOIN games g ON g.game_pk = e.game_pk "
+        f"  WHERE {where})", params)
+    db.execute(
+        f"DELETE FROM edges e USING games g "
+        f"WHERE g.game_pk = e.game_pk AND {where}", params)
+    return {"deleted": total, "date": date, "kind": kind_filter or "all", "by_kind": by_kind}
