@@ -485,7 +485,7 @@ def project_pitcher(
 
         # Blend L5 era into true_era — recent form matters
         if l5_era_val is not None:
-            true_era = 0.65 * true_era + 0.35 * float(l5_era_val)
+            true_era = 0.80 * true_era + 0.20 * float(l5_era_val)
             true_era = max(1.5, min(8.0, true_era))
         source = "statcast"
         high_variance = true_era > 5.0
