@@ -75,6 +75,11 @@ def dedupe_totals_per_game(edges_for_game: list[dict]) -> list[dict]:
     if not total_edge or not f5_edge:
         return edges_for_game
 
+    # Opposite directions (e.g. full-game OVER + F5 UNDER) are not correlated
+    # double-bets — keep both. Only collapse same-direction total/F5.
+    if total_edge.get("lean") != f5_edge.get("lean"):
+        return edges_for_game
+
     keep = total_edge if abs(total_edge["edge"]) >= abs(f5_edge["edge"]) else f5_edge
     drop = f5_edge    if keep is total_edge else total_edge
     drop_id = id(drop)
@@ -120,6 +125,9 @@ def _persistent_cross_run_dedup(run_date_str: str) -> int:
                          key=lambda e: abs(float(e["edge"] or 0)))
         best_f5    = max((e for e in edges_list if e["kind"] == "f5"),
                          key=lambda e: abs(float(e["edge"] or 0)))
+        # Opposite directions are not correlated double-bets — keep both.
+        if best_total["lean"] != best_f5["lean"]:
+            continue
         keep_id = best_total["edge_id"] if abs(float(best_total["edge"])) >= abs(float(best_f5["edge"])) else best_f5["edge_id"]
         # Drop every edge in this game's total/f5 list except keep_id
         for e in edges_list:
