@@ -171,8 +171,8 @@ def compute_edges_for_game(*,game_pk,game,away_proj,home_proj,
 
     if market_f5_total is not None:
         diff_f5=f5_total-market_f5_total
-        if abs(diff_f5)>=EDGE_THRESHOLDS["F5"]:
-            lean_f5="OVER" if diff_f5>0 else "UNDER"
+        if diff_f5 <= -EDGE_THRESHOLDS["F5"]:
+            lean_f5="UNDER"
             edges.append({"game_pk":game_pk,"kind":"f5","category":"F5",
                 "pitcher_mlb_id":None,"pitcher_name":None,
                 "team_code":game.get("away_team"),"opp_team_code":game.get("home_team"),
