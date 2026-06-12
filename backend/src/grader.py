@@ -259,6 +259,11 @@ def grade_yesterday(target_date: Optional[date] = None) -> dict:
         wins = losses = pushes = 0
         total_profit = 0.0
         for e in edges:
+            # Skip unplayed games — a postponed/cancelled/suspended game can
+            # carry away_score/home_score = 0, which would book an OVER as a
+            # LOSS. No edge_results row => no-action until the game completes.
+            if e.get("status") in ("Postponed", "Cancelled", "Suspended"):
+                continue
             existing = db.fetchone("SELECT 1 FROM edge_results WHERE edge_id=%s", (e["edge_id"],))
             if existing:
                 continue
