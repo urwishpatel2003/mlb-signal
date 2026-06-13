@@ -48,6 +48,7 @@ function fmtRate(w,l){ const d=w+l; return d>0?Math.round(w/d*100)+'%':'--'; }
 export default function App() {
   const [tab, setTab]     = useState('Games');
   const [adminVisible, setAdminVisible] = useState(false);
+  const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [slate, setSlate] = useState(null);
   const [perf, setPerf]   = useState(null);
   const [loading, setLoading] = useState(true);
@@ -86,9 +87,9 @@ export default function App() {
 
   return (
     <div className="app">
-      <Masthead slate={slate} onTripleClick={()=>setAdminVisible(v=>!v)} />
+      <Masthead slate={slate} onTripleClick={()=>{ setAdminUnlocked(true); setAdminVisible(v=>!v); }} />
       <nav className="tabs">
-        {TABS.map(t => {
+        {TABS.filter(t => t !== 'My Record' || adminUnlocked).map(t => {
           let count = '';
           if (t==='Full Game O/U')         count = gameTotalEdges.length ? ` (${gameTotalEdges.length})` : '';
           if (t==='F5 O/U')     count = f5Edges.length        ? ` (${f5Edges.length})`        : '';
@@ -114,7 +115,7 @@ export default function App() {
           {tab==='Pitchers'      && <PitchersView projections={slate.projections} games={slate.games} />}
           {tab==='Slate'         && <GamesView games={slate.games} projections={slate.projections} />}
           {tab==='Stats'         && <StatsView />}
-          {tab==='My Record'     && <MyRecordView />}
+          {tab==='My Record'     && adminUnlocked && <MyRecordView />}
           {tab==='Track Record'  && <PerformanceView perf={perf} />}
         </>
       )}
