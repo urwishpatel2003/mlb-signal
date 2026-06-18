@@ -192,8 +192,13 @@ def compute_edges_for_game(*,game_pk,game,away_proj,home_proj,
         ai,hi=remove_vig(american_to_implied(away_ml),american_to_implied(home_ml))
         hep=home_win_prob-hi; aep=away_win_prob-ai
         def ml_threshold(odds):
-            # Tightened: any non-favorite (+100 or longer) needs 60pp; fav needs 20pp
-            return 0.60 if odds is not None and odds >= 100 else EDGE_THRESHOLDS["ML"]
+            # Favorites only — dogs are never bet.
+            #   dog (>= +100): 1.0 (unreachable)  |  fav <= -120: 10pp  |  slight fav: 25pp
+            if odds is None or odds >= 100:
+                return 1.0
+            if odds <= -120:
+                return 0.10
+            return 0.25
         if hep > 0 and hep>=ml_threshold(home_ml) and hep>=aep:
             ml_lean,ml_odds,wp,ep,oi=game.get("home_team"),home_ml,home_win_prob,hep,hi
         elif aep > 0 and aep>=ml_threshold(away_ml):

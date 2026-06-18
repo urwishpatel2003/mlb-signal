@@ -1806,3 +1806,107 @@ def admin_delete_edges(token: str, date: str = "", kind: str = "", confirm: str 
         f"DELETE FROM edges e USING games g "
         f"WHERE g.game_pk = e.game_pk AND {where}", params)
     return {"deleted": total, "date": date, "kind": kind_filter or "all", "by_kind": by_kind}
+
+
+@app.get("/api/admin/diag/ml_backtest/{token}")
+def diag_ml_backtest(token: str, days: int = 60):
+    """Gated ML backtest. Replays the favorites-only ML rule (favs <=-120: 10pp,
+    slight favs: 25pp, dogs never) over completed games, applying the live gate
+    (both starters source='statcast'). Uses the latest projection per game and
+    the stored no-vig implied odds. Reflects the model as it ran each day."""
+    _check_admin(token)
+    from . import db
+
+    rows = db.fetchall(
+        """
+        WITH latest AS (
+          SELECT DISTINCT ON (gp.game_pk)
+            gp.game_pk, gp.run_id,
+            gp.home_win_prob, gp.away_win_prob,
+            gp.home_ml, gp.away_ml,
+            gp.home_ml_implied, gp.away_ml_implied,
+            g.home_team, g.away_team, g.home_score, g.away_score
+          FROM game_projections gp
+          JOIN projection_runs pr ON pr.run_id = gp.run_id
+          JOIN games g ON g.game_pk = gp.game_pk
+          WHERE pr.run_date >= CURRENT_DATE - %s
+            AND g.status = 'Final' AND g.home_score IS NOT NULL
+            AND gp.home_ml IS NOT NULL AND gp.away_ml IS NOT NULL
+            AND gp.home_win_prob IS NOT NULL AND gp.home_ml_implied IS NOT NULL
+          ORDER BY gp.game_pk, gp.run_id DESC
+        )
+        SELECT l.*,
+          ap.source AS away_src,
+          hp.source AS home_src
+        FROM latest l
+        LEFT JOIN pitcher_projections ap ON ap.run_id = l.run_id AND ap.team_code = l.away_team
+        LEFT JOIN pitcher_projections hp ON hp.run_id = l.run_id AND hp.team_code = l.home_team
+        """,
+        (days,),
+    )
+
+    def ml_threshold(odds):
+        if odds is None or odds >= 100:
+            return 1.0
+        if odds <= -120:
+            return 0.10
+        return 0.25
+
+    def profit(odds):
+        return odds / 100.0 if odds > 0 else 100.0 / abs(odds)
+
+    tiers = {"fav_le_120_10pp": {"n": 0, "w": 0, "l": 0, "u": 0.0},
+             "slight_fav_25pp": {"n": 0, "w": 0, "l": 0, "u": 0.0}}
+    considered = 0
+    skipped_gate = 0
+    seen = set()
+
+    for r in rows:
+        gp = r["game_pk"]
+        if gp in seen:
+            continue
+        seen.add(gp)
+        considered += 1
+        if not (r["away_src"] == "statcast" and r["home_src"] == "statcast"):
+            skipped_gate += 1
+            continue
+        hep = float(r["home_win_prob"]) - float(r["home_ml_implied"])
+        aep = float(r["away_win_prob"]) - float(r["away_ml_implied"])
+        if hep > 0 and hep >= ml_threshold(r["home_ml"]) and hep >= aep:
+            bet_ml, won = r["home_ml"], (r["home_score"] > r["away_score"])
+        elif aep > 0 and aep >= ml_threshold(r["away_ml"]):
+            bet_ml, won = r["away_ml"], (r["away_score"] > r["home_score"])
+        else:
+            continue
+        b = "fav_le_120_10pp" if bet_ml <= -120 else "slight_fav_25pp"
+        tiers[b]["n"] += 1
+        if won:
+            tiers[b]["w"] += 1
+            tiers[b]["u"] += profit(bet_ml)
+        else:
+            tiers[b]["l"] += 1
+            tiers[b]["u"] -= 1.0
+
+    def summarize(d):
+        n = d["n"]
+        return {"n": n, "w": d["w"], "l": d["l"],
+                "win_pct": round(100.0 * d["w"] / n, 1) if n else None,
+                "units": round(d["u"], 2),
+                "roi_pct": round(100.0 * d["u"] / n, 1) if n else None}
+
+    total = {"n": 0, "w": 0, "l": 0, "u": 0.0}
+    for d in tiers.values():
+        for k in ("n", "w", "l", "u"):
+            total[k] += d[k]
+
+    return {
+        "window_days": days,
+        "rule": "favorites only — fav <=-120: 10pp, slight fav: 25pp, dogs never",
+        "gate": "both starters source='statcast'",
+        "games_considered": considered,
+        "skipped_failing_gate": skipped_gate,
+        "by_tier": {k: summarize(v) for k, v in tiers.items()},
+        "total": summarize(total),
+        "note": "Uses win probs stored on each date (model as it ran then). "
+                "Latest projection per game; binary ML grade; profit at stored ML odds.",
+    }
