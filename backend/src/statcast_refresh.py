@@ -1080,6 +1080,125 @@ def _refresh_pitcher_fb_pct(season_year: int) -> int:
 # Top-level refresh
 # =============================================================================
 
+def _r(v, nd):
+    return round(float(v), nd) if v is not None else None
+
+
+def _refresh_league_constants(season_year: int) -> int:
+    """League-wide averages from the freshly-upserted xstats tables, upserted as
+    one league_constants row. Runs last so every source table is populated.
+    Weighted (IP/TBF/PA/BIP); pitcher rates are starters-only (gs>=5). This is the
+    live source the projection will read instead of hardcoded LEAGUE_* literals."""
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS league_constants (
+            season_year            INTEGER PRIMARY KEY,
+            league_er9             NUMERIC(5,3),
+            league_xera            NUMERIC(5,3),
+            league_xfip            NUMERIC(5,3),
+            league_k_pct           NUMERIC(5,4),
+            league_bb9             NUMERIC(5,3),
+            league_hr_fb           NUMERIC(5,4),
+            league_fb_pct          NUMERIC(5,4),
+            league_xwoba           NUMERIC(5,4),
+            league_xba             NUMERIC(5,4),
+            league_bullpen_er9     NUMERIC(5,3),
+            league_ip_per_start    NUMERIC(4,2),
+            league_er9_l5          NUMERIC(5,3),
+            league_k_pct_l5        NUMERIC(5,4),
+            league_xwoba_l5        NUMERIC(5,4),
+            league_bullpen_er9_l7  NUMERIC(5,3),
+            n_starters             INTEGER,
+            n_hitters              INTEGER,
+            n_teams                INTEGER,
+            computed_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+    """)
+
+    p = db.fetchone("""
+        SELECT
+          SUM(era*ip_total)  FILTER (WHERE era IS NOT NULL)  / NULLIF(SUM(ip_total) FILTER (WHERE era IS NOT NULL),0)  AS er9,
+          SUM(xera*ip_total) FILTER (WHERE xera IS NOT NULL) / NULLIF(SUM(ip_total) FILTER (WHERE xera IS NOT NULL),0) AS xera,
+          SUM(xfip*ip_total) FILTER (WHERE xfip IS NOT NULL) / NULLIF(SUM(ip_total) FILTER (WHERE xfip IS NOT NULL),0) AS xfip,
+          SUM(k_pct*tbf)     FILTER (WHERE k_pct IS NOT NULL)/ NULLIF(SUM(tbf) FILTER (WHERE k_pct IS NOT NULL),0)     AS k_pct,
+          SUM(bb9*ip_total)  FILTER (WHERE bb9 IS NOT NULL)  / NULLIF(SUM(ip_total) FILTER (WHERE bb9 IS NOT NULL),0)  AS bb9,
+          SUM(hr_fb_rate*ip_total) FILTER (WHERE hr_fb_rate IS NOT NULL) / NULLIF(SUM(ip_total) FILTER (WHERE hr_fb_rate IS NOT NULL),0) AS hr_fb,
+          SUM(fb_pct*bip)    FILTER (WHERE fb_pct IS NOT NULL)/ NULLIF(SUM(bip) FILTER (WHERE fb_pct IS NOT NULL),0)   AS fb_pct,
+          SUM(ip_total) / NULLIF(SUM(gs),0) AS ip_per_start,
+          AVG(l5_era)   FILTER (WHERE l5_era IS NOT NULL)   AS er9_l5,
+          AVG(l5_k_pct) FILTER (WHERE l5_k_pct IS NOT NULL) AS k_pct_l5,
+          COUNT(*) AS n
+        FROM pitcher_xstats
+        WHERE season_year=%s AND gs >= 5 AND era IS NOT NULL AND ip_total > 0
+    """, (season_year,))
+
+    h = db.fetchone("""
+        SELECT
+          SUM(est_woba*pa) FILTER (WHERE est_woba IS NOT NULL) / NULLIF(SUM(pa) FILTER (WHERE est_woba IS NOT NULL),0) AS xwoba,
+          SUM(est_ba*pa)   FILTER (WHERE est_ba IS NOT NULL)   / NULLIF(SUM(pa) FILTER (WHERE est_ba IS NOT NULL),0)   AS xba,
+          SUM(l5_woba*pa)  FILTER (WHERE l5_woba IS NOT NULL)  / NULLIF(SUM(pa) FILTER (WHERE l5_woba IS NOT NULL),0)  AS xwoba_l5,
+          COUNT(*) AS n
+        FROM hitter_xstats
+        WHERE season_year=%s AND pa >= 30
+    """, (season_year,))
+
+    t = db.fetchone("""
+        SELECT
+          SUM(bullpen_era*bullpen_ip)       FILTER (WHERE bullpen_era IS NOT NULL)    / NULLIF(SUM(bullpen_ip) FILTER (WHERE bullpen_era IS NOT NULL),0)        AS bp_er9,
+          SUM(bullpen_era_l7*bullpen_ip_l7) FILTER (WHERE bullpen_era_l7 IS NOT NULL) / NULLIF(SUM(bullpen_ip_l7) FILTER (WHERE bullpen_era_l7 IS NOT NULL),0) AS bp_er9_l7,
+          COUNT(*) AS n
+        FROM team_xstats
+        WHERE season_year=%s
+    """, (season_year,))
+
+    if not p or p.get("n") is None or p["n"] < 20:
+        log.warning("league_constants: only %s qualified starters - skipped", (p or {}).get("n"))
+        return 0
+
+    row = {
+        "season_year": season_year,
+        "league_er9": _r(p["er9"], 3), "league_xera": _r(p["xera"], 3),
+        "league_xfip": _r(p["xfip"], 3), "league_k_pct": _r(p["k_pct"], 4),
+        "league_bb9": _r(p["bb9"], 3), "league_hr_fb": _r(p["hr_fb"], 4),
+        "league_fb_pct": _r(p["fb_pct"], 4), "league_ip_per_start": _r(p["ip_per_start"], 2),
+        "league_er9_l5": _r(p["er9_l5"], 3), "league_k_pct_l5": _r(p["k_pct_l5"], 4),
+        "league_xwoba": _r(h["xwoba"], 4) if h else None,
+        "league_xba": _r(h["xba"], 4) if h else None,
+        "league_xwoba_l5": _r(h["xwoba_l5"], 4) if h else None,
+        "league_bullpen_er9": _r(t["bp_er9"], 3) if t else None,
+        "league_bullpen_er9_l7": _r(t["bp_er9_l7"], 3) if t else None,
+        "n_starters": p["n"], "n_hitters": (h or {}).get("n") or 0,
+        "n_teams": (t or {}).get("n") or 0,
+    }
+    db.execute("""
+        INSERT INTO league_constants (
+            season_year, league_er9, league_xera, league_xfip, league_k_pct, league_bb9,
+            league_hr_fb, league_fb_pct, league_xwoba, league_xba, league_bullpen_er9,
+            league_ip_per_start, league_er9_l5, league_k_pct_l5, league_xwoba_l5,
+            league_bullpen_er9_l7, n_starters, n_hitters, n_teams, computed_at)
+        VALUES (
+            %(season_year)s, %(league_er9)s, %(league_xera)s, %(league_xfip)s, %(league_k_pct)s, %(league_bb9)s,
+            %(league_hr_fb)s, %(league_fb_pct)s, %(league_xwoba)s, %(league_xba)s, %(league_bullpen_er9)s,
+            %(league_ip_per_start)s, %(league_er9_l5)s, %(league_k_pct_l5)s, %(league_xwoba_l5)s,
+            %(league_bullpen_er9_l7)s, %(n_starters)s, %(n_hitters)s, %(n_teams)s, now())
+        ON CONFLICT (season_year) DO UPDATE SET
+            league_er9=EXCLUDED.league_er9, league_xera=EXCLUDED.league_xera,
+            league_xfip=EXCLUDED.league_xfip, league_k_pct=EXCLUDED.league_k_pct,
+            league_bb9=EXCLUDED.league_bb9, league_hr_fb=EXCLUDED.league_hr_fb,
+            league_fb_pct=EXCLUDED.league_fb_pct, league_xwoba=EXCLUDED.league_xwoba,
+            league_xba=EXCLUDED.league_xba, league_bullpen_er9=EXCLUDED.league_bullpen_er9,
+            league_ip_per_start=EXCLUDED.league_ip_per_start, league_er9_l5=EXCLUDED.league_er9_l5,
+            league_k_pct_l5=EXCLUDED.league_k_pct_l5, league_xwoba_l5=EXCLUDED.league_xwoba_l5,
+            league_bullpen_er9_l7=EXCLUDED.league_bullpen_er9_l7,
+            n_starters=EXCLUDED.n_starters, n_hitters=EXCLUDED.n_hitters,
+            n_teams=EXCLUDED.n_teams, computed_at=now()
+    """, row)
+    log.info("league_constants %s: ER9=%.2f xwOBA=%.3f K%%=%.1f xFIP=%.2f bullpen=%.2f IP/GS=%.2f (n=%d SP)",
+             season_year, row["league_er9"] or 0, row["league_xwoba"] or 0,
+             (row["league_k_pct"] or 0) * 100, row["league_xfip"] or 0,
+             row["league_bullpen_er9"] or 0, row["league_ip_per_start"] or 0, row["n_starters"])
+    return 1
+
+
 def refresh_statcast(season_year: Optional[int] = None) -> dict:
     season_year = season_year or date.today().year
     job_id = db.log_job_start("statcast_refresh")
@@ -1113,6 +1232,7 @@ def refresh_statcast(season_year: Optional[int] = None) -> dict:
             ("hitter splits",              _refresh_hitter_splits,        "n_hitter_splits"),
             ("team bullpen (season+L7)",   _refresh_team_bullpen_stats,   "n_team_bullpen"),
             ("team offensive xwOBA",       _refresh_team_offensive_xwoba, "n_team_offense"),
+            ("league constants",           _refresh_league_constants,     "n_league_constants"),
         ]:
             try:
                 t0 = time.time()

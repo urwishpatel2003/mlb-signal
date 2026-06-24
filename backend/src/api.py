@@ -1910,3 +1910,25 @@ def diag_ml_backtest(token: str, days: int = 60):
         "note": "Uses win probs stored on each date (model as it ran then). "
                 "Latest projection per game; binary ML grade; profit at stored ML odds.",
     }
+
+
+@app.get("/api/admin/diag/league_constants/{token}")
+def diag_league_constants(token: str):
+    """Computed league constants vs the current hardcoded literals. Eyeball this
+    before wiring projections.py/reasoning.py to read from the table."""
+    _check_admin(token)
+    from . import db
+    try:
+        row = db.fetchone("SELECT * FROM league_constants ORDER BY season_year DESC LIMIT 1")
+    except Exception as e:
+        row = None
+    return {
+        "computed": row or "none yet - run the statcast refresh",
+        "hardcoded_now": {
+            "LEAGUE_ER9": 4.30, "LEAGUE_TRUE_ERA (reasoning)": 4.20,
+            "LEAGUE_XWOBA": 0.320, "LEAGUE_K_PCT": 0.225, "LEAGUE_XFIP": 4.10,
+            "LEAGUE_HR_FB": 0.118, "LEAGUE_FB_PCT": 0.355,
+            "LEAGUE_BULLPEN_ER9": 4.00, "LEAGUE_IP": 5.5,
+        },
+        "note": "Nothing reads from the computed row yet. This is the validation view.",
+    }
