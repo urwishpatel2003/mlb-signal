@@ -1040,12 +1040,17 @@ def _refresh_pitcher_fb_pct(season_year: int) -> int:
             xfip = None
             if k_pct_val and bb9_val and ip_val and ip_val > 20 and tbf_val > 0:
                 lg_hr_fb = 0.118  # league average HR/FB rate
-                # Estimated components per IP
-                k_per_9   = k_pct_val * (tbf_val / ip_val) * 3  # K/9 via k_pct * BF/IP * 3
-                bb_per_9  = bb9_val
-                fb_per_9  = fb_pct * (tbf_val / ip_val) * 3     # FB/9 via fb_pct * BF/IP * 3
-                hr_exp_9  = fb_per_9 * lg_hr_fb
-                xfip_raw  = (13 * hr_exp_9 + 3 * bb_per_9 - 2 * k_per_9) + 3.10
+                # FIP form is (13*HR + 3*BB - 2*K)/IP, so components are PER INNING.
+                # (Old code used per-9 values without dividing by IP, plus a wrong
+                # *3, which pinned nearly every pitcher at the 8.0 clamp.)
+                bf_per_ip = tbf_val / ip_val                      # batters faced per inning
+                k_per_ip  = k_pct_val * bf_per_ip                 # K/IP
+                bb_per_ip = bb9_val / 9.0                         # BB/IP
+                bb_frac   = bb_per_ip / bf_per_ip if bf_per_ip else 0.0
+                bip_frac  = max(0.45, 1.0 - k_pct_val - bb_frac)  # balls in play per batter
+                fb_per_ip = fb_pct * bip_frac * bf_per_ip         # FB/IP (fb_pct is per BIP)
+                hr_exp_ip = fb_per_ip * lg_hr_fb                  # expected HR/IP
+                xfip_raw  = 13 * hr_exp_ip + 3 * bb_per_ip - 2 * k_per_ip + 3.10
                 xfip      = round(max(1.5, min(8.0, xfip_raw)), 2)
 
             update_rows.append({
