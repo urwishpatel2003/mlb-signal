@@ -184,9 +184,11 @@ def compute_edges_for_game(*,game_pk,game,away_proj,home_proj,
         ai,hi=remove_vig(american_to_implied(away_ml),american_to_implied(home_ml))
         hep=home_win_prob-hi; aep=away_win_prob-ai
         def ml_threshold(odds):
-            # Favorites only — dogs are never bet.
-            #   dog (>= +100): 1.0 (unreachable)  |  fav <= -120: 10pp  |  slight fav: 25pp
-            if odds is None or odds >= 100:
+            # Odds-band gate: only bet moneylines from +100 to -160. Outside the
+            # band (dog longer than +100, or favorite stronger than -160) ->
+            # unreachable threshold, never bet. Inside: -120 or stronger needs
+            # 10pp, slight favorites 25pp.
+            if odds is None or odds > 100 or odds < -160:
                 return 1.0
             if odds <= -120:
                 return 0.10
