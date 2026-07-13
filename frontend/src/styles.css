@@ -2607,3 +2607,16 @@ html, body {
 @media (max-width: 640px) {
   .matchup-row { grid-template-columns: 18px minmax(70px, 1fr) 28px 48px 36px; gap: 6px; font-size: 11px; }
 }
+
+
+/* ----------------------------------------------------------------------------
+   F5 O/U removed - reflow all-time record tiles to fit any tile count.
+   auto-fit collapses empty tracks so 3 tiles (Full Game, ML, Props) fill the
+   row with no gap; handles 2 or 4 too. Phone (<=500px) stays single-column
+   via the existing max-width rules, so this starts at 501px.
+---------------------------------------------------------------------------- */
+@media (min-width: 501px) {
+  .tr-split {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) !important;
+  }
+}
