@@ -4,7 +4,7 @@ const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN || '';
 
 
-const TABS = ['Full Game O/U', 'F5 O/U', 'Moneyline', 'Pitcher Props', 'Pitchers', 'Slate', 'Stats', 'My Record', 'Track Record'];
+const TABS = ['Full Game O/U', 'Moneyline', 'Pitcher Props', 'Pitchers', 'Slate', 'Stats', 'My Record', 'Track Record'];
 const MARKET_LABELS = {
   Total: 'Game Total', F5: 'F5 O/U', ML: 'Moneyline',
   K: 'Pitcher Strikeouts', Hits: 'Pitcher Hits Allowed',
@@ -165,7 +165,7 @@ function Masthead({ slate, onTripleClick }) {
 // Edges view (game totals + pitcher props)
 // ============================================================================
 function EdgesView({ edges, kind }) {
-  const PROP_CATEGORIES = ['K', 'Outs', 'ER', 'Hits', 'Walks'];
+  const PROP_CATEGORIES = ['K', 'ER', 'Hits', 'Walks'];
   const [propCategory, setPropCategory] = useState('K');
   const emptyMsg = kind==='game' ? 'No game total edges flagged tonight.' : 'No pitcher prop edges flagged tonight.';
   if (!edges || edges.length===0) return <div className="empty">{emptyMsg}</div>;
