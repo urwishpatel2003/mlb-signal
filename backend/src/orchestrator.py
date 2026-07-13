@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 log = logging.getLogger("orchestrator")
 MODEL_VERSION = "v4.1"
 _DK_LINES: dict = {}
-EDGE_THRESHOLDS = {"Total":0.50,"F5":0.75,"ML":0.20,"K":0.50,"ER":0.50,"Outs":0.70}
+EDGE_THRESHOLDS = {"Total":0.50,"F5":0.75,"ML":0.20,"K":0.50,"ER":0.50}
 
 def american_to_implied(o): return 100/(o+100) if o>0 else -o/(-o+100)
 def remove_vig(a,h): t=a+h; return a/t,h/t
@@ -163,7 +163,7 @@ def compute_edges_for_game(*,game_pk,game,away_proj,home_proj,
 
     if market_f5_total is not None:
         diff_f5=f5_total-market_f5_total
-        if abs(diff_f5)>=EDGE_THRESHOLDS["F5"]:
+        if False:  # F5 market discontinued 2026-07 (net -7.54u); projection kept, no edge emitted
             lean_f5="OVER" if diff_f5>0 else "UNDER"
             edges.append({"game_pk":game_pk,"kind":"f5","category":"F5",
                 "pitcher_mlb_id":None,"pitcher_name":None,
@@ -212,7 +212,7 @@ def compute_edges_for_game(*,game_pk,game,away_proj,home_proj,
         pitcher_dk=odds_props.lookup_lines(p.last_first,_DK_LINES) if _DK_LINES else None
         if pitcher_dk: pitcher_dk={cat:{"line":v,"over_price":None,"under_price":None} if not isinstance(v,dict) else v for cat,v in pitcher_dk.items()}
         if not pitcher_dk: continue
-        proj_vals={"K":p.k,"ER":p.er,"Outs":p.outs}
+        proj_vals={"K":p.k,"ER":p.er}
         for category,prop_data in pitcher_dk.items():
             if category not in proj_vals: continue
             line=prop_data.get("line") if isinstance(prop_data,dict) else prop_data
