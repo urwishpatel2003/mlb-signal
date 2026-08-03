@@ -578,6 +578,13 @@ def project_pitcher(
     leash_adj = 1.0 - (wx_run - 1.0) * 0.3
     ip_adj    = ip * leash_adj
 
+    # Opener guard: a starter averaging < 2 IP over his last 5 starts is being
+    # used as an opener/bulk-arm. Projecting him as a full starter inflates ER,
+    # Outs, and BB (all derive from ip_adj). Cap to ~1 IP; the bullpen covers
+    # the rest of the game.
+    if l5_ip is not None and l5_ip < 2 and gs_val > 0:
+        ip_adj = min(ip_adj, 1.0)
+
     proj = PitcherProjection(
         pitcher_mlb_id=pitcher_mlb_id, last_first=pitcher_name,
         team_code=team_code, opp_team_code=opp_team_code, hand=pitcher_hand,
