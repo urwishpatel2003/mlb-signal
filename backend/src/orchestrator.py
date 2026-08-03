@@ -216,6 +216,11 @@ def compute_edges_for_game(*,game_pk,game,away_proj,home_proj,
         for category,prop_data in pitcher_dk.items():
             if category not in proj_vals: continue
             line=prop_data.get("line") if isinstance(prop_data,dict) else prop_data
+            # Opener guard: a <=1.5 ER line means the book expects an opener
+            # (~1 IP). The model projects a full starter, so this would be a
+            # phantom OVER edge. Skip it.
+            if category=="ER" and line is not None and float(line) <= 1.5:
+                continue
             if line is None: continue
             proj_val=proj_vals[category]; diff=proj_val-float(line)
             if abs(diff)<EDGE_THRESHOLDS.get(category,0.5): continue
