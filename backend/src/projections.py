@@ -582,7 +582,8 @@ def project_pitcher(
     # used as an opener/bulk-arm. Projecting him as a full starter inflates ER,
     # Outs, and BB (all derive from ip_adj). Cap to ~1 IP; the bullpen covers
     # the rest of the game.
-    if l5_ip is not None and l5_ip < 2 and gs_val > 0:
+    _l5_ip_val = pitcher_xstats.get("l5_avg_ip")
+    if _l5_ip_val is not None and float(_l5_ip_val) < 2 and gs_val > 0:
         ip_adj = min(ip_adj, 1.0)
 
     proj = PitcherProjection(
