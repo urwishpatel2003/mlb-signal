@@ -1204,6 +1204,101 @@ def _refresh_league_constants(season_year: int) -> int:
     return 1
 
 
+def _refresh_team_platoon_woba(season_year: int) -> int:
+    """Team hitting wOBA split by opposing pitcher handedness.
+
+    MLB StatsAPI statSplits with sitCodes=vl,vr returns raw counts (no wOBA),
+    so wOBA is computed here from the same WOBA_WEIGHTS used elsewhere:
+      num = .690*uBB + .722*HBP + .884*1B + 1.261*2B + 1.601*3B + 2.072*HR
+      den = AB + uBB + SF + HBP
+    PA is stored alongside so thin splits are visible (teams face ~2x RHP).
+    """
+    log.info("Fetching team platoon wOBA (vs LHP / vs RHP) for all 30 teams")
+    db.execute("""
+        ALTER TABLE team_xstats
+          ADD COLUMN IF NOT EXISTS woba_vs_lhp NUMERIC(5,4),
+          ADD COLUMN IF NOT EXISTS woba_vs_rhp NUMERIC(5,4),
+          ADD COLUMN IF NOT EXISTS pa_vs_lhp   INTEGER,
+          ADD COLUMN IF NOT EXISTS pa_vs_rhp   INTEGER;
+    """)
+
+    try:
+        r = requests.get(f"{MLB_API_BASE}/teams?sportId=1&season={season_year}",
+                         timeout=REQUEST_TIMEOUT)
+        r.raise_for_status()
+        teams_data = r.json().get("teams", [])
+    except Exception as e:
+        log.warning("Team list fetch failed: %s", e)
+        return 0
+
+    def _woba_from_stat(s):
+        try:
+            h   = int(s.get("hits") or 0)
+            d   = int(s.get("doubles") or 0)
+            t   = int(s.get("triples") or 0)
+            hr  = int(s.get("homeRuns") or 0)
+            bb  = int(s.get("baseOnBalls") or 0)
+            ibb = int(s.get("intentionalWalks") or 0)
+            hbp = int(s.get("hitByPitch") or 0)
+            ab  = int(s.get("atBats") or 0)
+            sf  = int(s.get("sacFlies") or 0)
+            singles = max(0, h - d - t - hr)
+            ubb = max(0, bb - ibb)
+            num = (WOBA_WEIGHTS["uBB"] * ubb + WOBA_WEIGHTS["HBP"] * hbp
+                   + WOBA_WEIGHTS["single"] * singles + WOBA_WEIGHTS["double"] * d
+                   + WOBA_WEIGHTS["triple"] * t + WOBA_WEIGHTS["HR"] * hr)
+            den = ab + ubb + sf + hbp
+            return (round(num / den, 4) if den > 0 else None,
+                    int(s.get("plateAppearances") or 0))
+        except Exception:
+            return None, 0
+
+    rows = []
+    for team in teams_data:
+        team_id   = team.get("id")
+        team_code = team.get("abbreviation")
+        if not team_id or not team_code:
+            continue
+        vals = {"woba_vs_lhp": None, "woba_vs_rhp": None,
+                "pa_vs_lhp": None, "pa_vs_rhp": None}
+        try:
+            resp = requests.get(
+                f"{MLB_API_BASE}/teams/{team_id}/stats",
+                params={"stats": "statSplits", "group": "hitting",
+                        "sitCodes": "vl,vr", "season": season_year},
+                timeout=REQUEST_TIMEOUT)
+            resp.raise_for_status()
+            for block in resp.json().get("stats", []):
+                for sp in block.get("splits", []):
+                    code = (sp.get("split") or {}).get("code")
+                    w, pa = _woba_from_stat(sp.get("stat") or {})
+                    if code == "vl":
+                        vals["woba_vs_lhp"], vals["pa_vs_lhp"] = w, pa
+                    elif code == "vr":
+                        vals["woba_vs_rhp"], vals["pa_vs_rhp"] = w, pa
+        except Exception as e:
+            log.debug("Platoon split fetch failed for %s: %s", team_code, e)
+            continue
+        if vals["woba_vs_lhp"] is None and vals["woba_vs_rhp"] is None:
+            continue
+        vals.update({"team_code": team_code, "season_year": season_year})
+        rows.append(vals)
+
+    if not rows:
+        log.warning("No team platoon rows computed")
+        return 0
+
+    n = db.execute_many("""
+        UPDATE team_xstats SET
+          woba_vs_lhp=%(woba_vs_lhp)s, woba_vs_rhp=%(woba_vs_rhp)s,
+          pa_vs_lhp=%(pa_vs_lhp)s, pa_vs_rhp=%(pa_vs_rhp)s,
+          refreshed_at=now()
+        WHERE team_code=%(team_code)s AND season_year=%(season_year)s;
+    """, rows)
+    log.info("Updated %d team platoon wOBA rows", n)
+    return n
+
+
 def refresh_statcast(season_year: Optional[int] = None) -> dict:
     season_year = season_year or date.today().year
     job_id = db.log_job_start("statcast_refresh")
@@ -1237,6 +1332,7 @@ def refresh_statcast(season_year: Optional[int] = None) -> dict:
             ("hitter splits",              _refresh_hitter_splits,        "n_hitter_splits"),
             ("team bullpen (season+L7)",   _refresh_team_bullpen_stats,   "n_team_bullpen"),
             ("team offensive xwOBA",       _refresh_team_offensive_xwoba, "n_team_offense"),
+            ("team platoon wOBA",          _refresh_team_platoon_woba,    "n_team_platoon"),
             ("league constants",           _refresh_league_constants,     "n_league_constants"),
         ]:
             try:

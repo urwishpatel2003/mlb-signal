@@ -1325,6 +1325,10 @@ function TeamStatsTable({ rows }) {
     { key:'bullpen_ip',      label:'BP IP',        align:'num',  type:'number', dp:1, width:'100px' },
     { key:'bullpen_era_l7',  label:'BP L7 ERA',    align:'num',  type:'number', dp:2, width:'110px', colorFn:COLOR.tBPERA },
     { key:'bullpen_ip_l7',   label:'BP L7 IP',     align:'num',  type:'number', dp:1, width:'110px' },
+    { key:'woba_vs_lhp',     label:'wOBA vLHP',    align:'num',  type:'number', fmt:fmt3, width:'105px', colorFn:COLOR.tWOBA },
+    { key:'pa_vs_lhp',       label:'PA vLHP',      align:'num',  type:'number', dp:0, width:'90px' },
+    { key:'woba_vs_rhp',     label:'wOBA vRHP',    align:'num',  type:'number', fmt:fmt3, width:'105px', colorFn:COLOR.tWOBA },
+    { key:'pa_vs_rhp',       label:'PA vRHP',      align:'num',  type:'number', dp:0, width:'90px' },
   ];
   const scoredRows = rows.map(r => {
     const off = teamOffenseComposite(r);
