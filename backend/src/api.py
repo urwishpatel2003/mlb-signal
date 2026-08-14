@@ -1252,6 +1252,7 @@ def stats_teams():
                pa,
                team_xwoba   AS est_woba,
                team_woba_l5 AS l5_woba,
+               woba_vs_lhp, pa_vs_lhp, woba_vs_rhp, pa_vs_rhp,
                bullpen_era, bullpen_xera, bullpen_ip,
                bullpen_era_l7, bullpen_ip_l7,
                refreshed_at::text AS refreshed_at
